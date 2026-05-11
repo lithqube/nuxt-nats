@@ -1,9 +1,10 @@
 import { defineNitroPlugin, useRuntimeConfig } from 'nitropack/runtime'
 import { connect } from '@nats-io/transport-node'
-import { wsconnect, type NatsConnection, type Status } from '@nats-io/nats-core'
+import { wsconnect, nkeyAuthenticator, type NatsConnection, type Status } from '@nats-io/nats-core'
 import { jetstream, jetstreamManager } from '@nats-io/jetstream'
 import type { JetStreamManager, StreamConfig } from '@nats-io/jetstream'
 import { parseDuration } from '../utils/parseDuration'
+import { stopAllConsumers } from '../utils/consumer'
 import {
   getNatsConnection,
   setNatsConnection,
@@ -24,9 +25,16 @@ async function buildConnection(cfg: NatsRuntimeConfig): Promise<NatsConnection> 
     maxReconnectAttempts: cfg.maxReconnectAttempts ?? -1,
   }
 
-  if (cfg.token) opts.token = cfg.token
-  if (cfg.user) opts.user = cfg.user
-  if (cfg.pass) opts.pass = cfg.pass
+  if (cfg.nkeySeed) {
+    opts.authenticator = nkeyAuthenticator(new TextEncoder().encode(cfg.nkeySeed))
+  }
+  else if (cfg.token) {
+    opts.token = cfg.token
+  }
+  else if (cfg.user) {
+    opts.user = cfg.user
+    opts.pass = cfg.pass
+  }
 
   if (cfg.tls && Object.keys(cfg.tls).length) {
     opts.tls = {
@@ -81,6 +89,8 @@ async function drainAndClose() {
   const nc = getNatsConnection()
   if (_isClosing || !nc) return
   _isClosing = true
+  // Stop consumer loops first so no new acks are sent during drain
+  stopAllConsumers()
   try {
     await nc.drain()
   }
