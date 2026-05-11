@@ -1,0 +1,70 @@
+{
+  "name": "nuxt-nats",
+  "version": "0.1.0",
+  "description": "Nuxt module for NATS JetStream — server-side publish, typed consumers, KV, stream provisioning",
+  "repository": "lithqube/nuxt-nats",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/types.d.mts",
+      "import": "./dist/module.mjs"
+    }
+  },
+  "main": "./dist/module.mjs",
+  "typesVersions": {
+    "*": {
+      ".": [
+        "./dist/types.d.mts"
+      ]
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "workspaces": [
+    "playground"
+  ],
+  "scripts": {
+    "prepack": "nuxt-module-build build",
+    "dev": "npm run dev:prepare && nuxt dev playground",
+    "dev:build": "nuxt build playground",
+    "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxt prepare playground",
+    "release": "npm run lint && npm run test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
+    "lint": "eslint .",
+    "test": "NODE_OPTIONS=--max-old-space-size=4096 vitest run",
+    "test:watch": "NODE_OPTIONS=--max-old-space-size=4096 vitest watch",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:all": "npm run test && npm run test:integration",
+    "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@nats-io/jetstream": "^3.3.0",
+    "@nats-io/kv": "^3.3.0",
+    "@nats-io/nats-core": "^3.3.0",
+    "@nats-io/obj": "^3.3.0",
+    "@nats-io/transport-node": "^3.3.0",
+    "@nuxt/kit": "^4.4.4",
+    "defu": "^6.1.4"
+  },
+  "devDependencies": {
+    "@nats-io/nkeys": "^2.0.3",
+    "@nuxt/devtools": "^3.2.4",
+    "@nuxt/eslint-config": "^1.15.2",
+    "@nuxt/module-builder": "^1.0.2",
+    "@nuxt/schema": "^4.4.4",
+    "@nuxt/test-utils": "^4.0.3",
+    "@testcontainers/nats": "^11.14.0",
+    "@types/node": "latest",
+    "changelogen": "^0.6.2",
+    "eslint": "^10.3.0",
+    "nuxt": "^4.4.4",
+    "testcontainers": "^11.14.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.5",
+    "vue-tsc": "^3.2.8"
+  }
+}
