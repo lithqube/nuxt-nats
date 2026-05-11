@@ -1,0 +1,69 @@
+name: Bug Report
+description: Report a defect in nuxt-nats
+labels: ['bug', 'triage']
+body:
+  - type: checkboxes
+    id: search
+    attributes:
+      label: Existing issues
+      options:
+        - label: I searched existing issues and this hasn't been reported yet.
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Connection lifecycle
+        - JetStream publish
+        - Consumer / DLQ / backoff
+        - KV store
+        - Object store
+        - Health endpoint
+        - Stream provisioning
+        - TLS / auth
+        - Bun / WebSocket transport
+        - Documentation
+        - CI / tooling
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Clear description of the defect and observed behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Configure nuxt-nats with ...
+        2. Publish a message to subject ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: 'nuxt-nats 0.1.0 — Nuxt 4.x — Node 20.x — NATS 2.10'
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / errors
+      render: shell
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context

@@ -1,0 +1,52 @@
+name: Feature Request
+description: Propose a new capability or enhancement for nuxt-nats
+labels: ['enhancement', 'triage']
+body:
+  - type: checkboxes
+    id: search
+    attributes:
+      label: Existing issues
+      options:
+        - label: I searched existing issues and this hasn't been proposed yet.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem does this solve? What use case is currently not covered?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should this work? Include config shape or API if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      options:
+        - Connection / transport
+        - JetStream publish
+        - Consumer / DLQ / backoff
+        - KV store
+        - Object store
+        - Health endpoint
+        - Stream provisioning
+        - TLS / auth
+        - Observability / metrics
+        - Documentation
+        - CI / tooling
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context

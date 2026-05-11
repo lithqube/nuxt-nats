@@ -39,7 +39,12 @@
     "test:watch": "NODE_OPTIONS=--max-old-space-size=4096 vitest watch",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:all": "npm run test && npm run test:integration",
-    "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit"
+    "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
+    "version:print": "scripts/version.sh",
+    "version:print-tag": "scripts/version.sh --tag",
+    "version:bump-alpha": "npm version prerelease --preid=alpha --no-git-tag-version",
+    "version:bump-minor": "npm version preminor --preid=alpha --no-git-tag-version",
+    "version:bump-major": "npm version premajor --preid=alpha --no-git-tag-version"
   },
   "dependencies": {
     "@nats-io/jetstream": "^3.3.0",

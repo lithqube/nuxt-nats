@@ -1,0 +1,32 @@
+# .claudeignore — Controls what Claude Code indexes into its context window.
+# Syntax mirrors .gitignore.
+
+# ─── Dependencies ─────────────────────────────────────────────────────────────
+node_modules/
+playground/node_modules/
+
+# ─── Lockfiles ────────────────────────────────────────────────────────────────
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ─── Build outputs ────────────────────────────────────────────────────────────
+dist/
+.output/
+.nuxt/
+.nitro/
+.cache/
+.data/
+coverage/
+
+# ─── Playground (generated Nuxt app — not module source) ──────────────────────
+playground/.output/
+playground/.nuxt/
+playground/.nitro/
+
+# ─── Vitest artifacts ─────────────────────────────────────────────────────────
+vitest.config.*.timestamp*
+
+# ─── OS noise ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
