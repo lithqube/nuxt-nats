@@ -126,10 +126,10 @@ interface NatsRuntimeConfig {
   maxReconnectAttempts: number
   jsDomain: string
   jsApiPrefix: string
-  tls?: { caFile?: string; certFile?: string; keyFile?: string }
+  tls?: { caFile?: string, certFile?: string, keyFile?: string }
   streams: StreamDefinitionRuntime[]
   consumers: unknown[]
-  health: { enabled?: boolean; endpoint?: string }
+  health: { enabled?: boolean, endpoint?: string }
 }
 
 export default defineNitroPlugin(async (nitroApp) => {

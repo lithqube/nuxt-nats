@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
+import { useJetStream } from '../../src/runtime/server/utils/useJetStream'
+import { jsPublish } from '../../src/runtime/server/utils/publish'
+import { defineNatsConsumer, stopAllConsumers } from '../../src/runtime/server/utils/consumer'
+
 vi.mock('../../src/runtime/server/utils/useJetStream', () => ({
   useJetStream: vi.fn(),
 }))
@@ -8,10 +12,6 @@ vi.mock('../../src/runtime/server/utils/publish', () => ({
   jsPublish: vi.fn().mockResolvedValue(undefined),
   corePublish: vi.fn(),
 }))
-
-import { useJetStream } from '../../src/runtime/server/utils/useJetStream'
-import { jsPublish } from '../../src/runtime/server/utils/publish'
-import { defineNatsConsumer, stopAllConsumers } from '../../src/runtime/server/utils/consumer'
 
 type MockMsg = ReturnType<typeof makeMsg>
 

@@ -5,7 +5,9 @@ import type { KV, KvOptions } from '@nats-io/kv'
 const _kvCache = new Map<string, KV>()
 
 /** For integration tests only — clears the KV bucket cache. */
-export function _clearKVCache() { _kvCache.clear() }
+export function _clearKVCache() {
+  _kvCache.clear()
+}
 
 /**
  * Get or create a KV bucket. Results are cached per bucket name within the process.

@@ -27,6 +27,7 @@ export async function startNats(): Promise<NatsTestContext> {
 }
 
 export async function stopNats(ctx: NatsTestContext) {
-  try { await ctx.nc.drain() } catch {}
+  try { await ctx.nc.drain() }
+  catch {}
   await ctx.container.stop()
 }

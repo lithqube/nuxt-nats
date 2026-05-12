@@ -5,7 +5,9 @@ import { useNats } from './useNats'
 const _objCache = new Map<string, ObjectStore>()
 
 /** For integration tests only — clears the Object Store bucket cache. */
-export function _clearObjCache() { _objCache.clear() }
+export function _clearObjCache() {
+  _objCache.clear()
+}
 
 /**
  * Get or open a NATS Object Store bucket.

@@ -108,8 +108,12 @@ export function defineNatsConsumer<T = unknown>(opts: NatsConsumerOptions<T>): A
 
           // Heartbeat to prevent redelivery for long-running handlers
           const heartbeatTimer = setInterval(() => {
-            try { msg.working() }
-            catch { /* msg may already be acked */ }
+            try {
+              msg.working()
+            }
+            catch {
+              // msg may already be acked
+            }
           }, Math.floor(ackWait / 2))
 
           let payload: T

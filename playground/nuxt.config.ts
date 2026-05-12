@@ -1,6 +1,13 @@
 export default defineNuxtConfig({
   modules: ['nuxt-nats'],
   devtools: { enabled: true },
+
+  runtimeConfig: {
+    nats: {
+      // Override via env: NUXT_NATS_TOKEN, NUXT_NATS_SERVERS, etc.
+      token: '',
+    },
+  },
   compatibilityDate: 'latest',
 
   nats: {
@@ -18,13 +25,6 @@ export default defineNuxtConfig({
     health: {
       enabled: true,
       endpoint: '/api/_nats/health',
-    },
-  },
-
-  runtimeConfig: {
-    nats: {
-      // Override via env: NUXT_NATS_TOKEN, NUXT_NATS_SERVERS, etc.
-      token: '',
     },
   },
 })

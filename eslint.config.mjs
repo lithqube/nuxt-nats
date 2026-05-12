@@ -16,5 +16,18 @@ export default createConfigForNuxt({
   },
 })
   .append(
-    // your custom flat config here...
+    // Test files need `any` for mocking NATS internals (consume iterators, JsMsg,
+    // ConsumerInfo) and use single-line patterns that style rules dislike.
+    {
+      files: ['test/**/*.ts'],
+      rules: {
+        '@typescript-eslint/no-explicit-any': 'off',
+        '@typescript-eslint/no-unused-vars': ['error', {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^(_|vi$)',
+        }],
+        '@stylistic/max-statements-per-line': ['error', { max: 2 }],
+        'no-empty': ['error', { allowEmptyCatch: true }],
+      },
+    },
   )

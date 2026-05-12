@@ -5,14 +5,27 @@
     <section>
       <h2>Health</h2>
       <pre>{{ health ?? 'loading...' }}</pre>
-      <button @click="refreshHealth">Refresh</button>
+      <button @click="refreshHealth">
+        Refresh
+      </button>
     </section>
 
     <section style="margin-top: 2rem">
       <h2>Publish to events.demo</h2>
-      <input v-model="message" placeholder="message" style="width: 300px" />
-      <button @click="emit" :disabled="publishing">{{ publishing ? 'Publishing…' : 'Publish' }}</button>
-      <p v-if="result">{{ result }}</p>
+      <input
+        v-model="message"
+        placeholder="message"
+        style="width: 300px"
+      >
+      <button
+        :disabled="publishing"
+        @click="emit"
+      >
+        {{ publishing ? 'Publishing…' : 'Publish' }}
+      </button>
+      <p v-if="result">
+        {{ result }}
+      </p>
     </section>
   </div>
 </template>
