@@ -1,6 +1,6 @@
 import { defineNitroPlugin, useRuntimeConfig } from 'nitropack/runtime'
-import { connect } from '@nats-io/transport-node'
-import { wsconnect, nkeyAuthenticator, type NatsConnection, type Status } from '@nats-io/nats-core'
+import { connect, wsconnect } from '@nats-io/transport-node'
+import { nkeyAuthenticator, type NatsConnection, type Status } from '@nats-io/nats-core'
 import { jetstream, jetstreamManager } from '@nats-io/jetstream'
 import type { JetStreamManager, StreamConfig } from '@nats-io/jetstream'
 import { parseDuration } from '../utils/parseDuration'

@@ -1,8 +1,28 @@
 {
   "name": "nuxt-nats",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.0",
   "description": "Nuxt module for NATS JetStream — server-side publish, typed consumers, KV, stream provisioning",
-  "repository": "lithqube/nuxt-nats",
+  "keywords": [
+    "nuxt",
+    "nuxt-module",
+    "nitro",
+    "nats",
+    "jetstream",
+    "messaging",
+    "pubsub",
+    "kv",
+    "object-store",
+    "event-streaming"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lithqube/nuxt-nats.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lithqube/nuxt-nats/issues"
+  },
+  "homepage": "https://github.com/lithqube/nuxt-nats#readme",
+  "author": "lithqube",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -47,11 +67,11 @@
     "version:bump-major": "npm version premajor --preid=alpha --no-git-tag-version"
   },
   "dependencies": {
-    "@nats-io/jetstream": "^3.3.0",
-    "@nats-io/kv": "^3.3.0",
-    "@nats-io/nats-core": "^3.3.0",
-    "@nats-io/obj": "^3.3.0",
-    "@nats-io/transport-node": "^3.3.0",
+    "@nats-io/jetstream": "^3.4.0",
+    "@nats-io/kv": "^3.4.0",
+    "@nats-io/nats-core": "^3.4.0",
+    "@nats-io/obj": "^3.4.0",
+    "@nats-io/transport-node": "^3.4.0",
     "@nuxt/kit": "^4.4.4",
     "defu": "^6.1.4"
   },
