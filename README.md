@@ -5,7 +5,7 @@
 [![License][license-src]][license-href]
 [![Nuxt][nuxt-src]][nuxt-href]
 
-NATS JetStream integration for Nuxt 4. Server-side publish, typed consumers, KV and Object Store — wired into Nitro's lifecycle with zero boilerplate.
+NATS JetStream integration for Nuxt. Server-side publish, typed consumers, KV and Object Store — wired into Nitro's lifecycle with zero boilerplate.
 
 - [✨ &nbsp;Release Notes](/CHANGELOG.md)
 
