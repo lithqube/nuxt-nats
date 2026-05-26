@@ -62,11 +62,14 @@ describe('jsPublish', () => {
 
     const consumer = await ctx.js.consumers.get('PUB_TEST', durable)
     const msgs = await consumer.fetch({ max_messages: 1, expires: 5000 })
+    let received = 0
     for await (const msg of msgs) {
       expect(msg.headers?.get('X-Trace-Id')).toBe(traceId)
       expect(msg.headers?.get('Nats-Msg-Id')).toBe('traced-1')
       msg.ack()
+      received++
     }
+    expect(received).toBe(1)
   })
 
   it('sets custom headers without msgId', async () => {
@@ -83,10 +86,13 @@ describe('jsPublish', () => {
 
     const consumer = await ctx.js.consumers.get('PUB_TEST', durable)
     const msgs = await consumer.fetch({ max_messages: 1, expires: 5000 })
+    let received = 0
     for await (const msg of msgs) {
       expect(msg.headers?.get('X-Trace-Id')).toBe(traceId)
       msg.ack()
+      received++
     }
+    expect(received).toBe(1)
   })
 
   it('rejects publish to a subject not covered by any stream', async () => {
