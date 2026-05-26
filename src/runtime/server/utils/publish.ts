@@ -54,10 +54,12 @@ export async function jsPublish(
   const pubOpts: Partial<JetStreamPublishOptions> = { timeout }
   if (msgId || extraHeaders) {
     const h = headers()
-    if (msgId) h.set('Nats-Msg-Id', msgId)
     if (extraHeaders) {
       for (const [k, v] of Object.entries(extraHeaders)) h.set(k, v)
     }
+    // Set after extraHeaders so msgId always controls dedup — callers cannot
+    // accidentally overwrite the dedup key via the headers option.
+    if (msgId) h.set('Nats-Msg-Id', msgId)
     pubOpts.headers = h
   }
 

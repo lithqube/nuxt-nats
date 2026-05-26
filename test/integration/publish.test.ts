@@ -95,6 +95,32 @@ describe('jsPublish', () => {
     expect(received).toBe(1)
   })
 
+  it('msgId wins over Nats-Msg-Id in extraHeaders', async () => {
+    const durable = 'pub-msgid-wins'
+    await ctx.jsm.consumers.add('PUB_TEST', {
+      durable_name: durable,
+      ack_policy: 'explicit',
+      deliver_policy: 'new',
+      filter_subjects: ['pub.msgid-wins'],
+    } as any)
+
+    await jsPublish(
+      'pub.msgid-wins',
+      { id: 'win-1' },
+      { msgId: 'correct-id', headers: { 'Nats-Msg-Id': 'wrong-id' } },
+    )
+
+    const consumer = await ctx.js.consumers.get('PUB_TEST', durable)
+    const msgs = await consumer.fetch({ max_messages: 1, expires: 5000 })
+    let received = 0
+    for await (const msg of msgs) {
+      expect(msg.headers?.get('Nats-Msg-Id')).toBe('correct-id')
+      msg.ack()
+      received++
+    }
+    expect(received).toBe(1)
+  })
+
   it('rejects publish to a subject not covered by any stream', async () => {
     await expect(
       jsPublish('no-stream.event', { id: '1' }, { timeout: 1000, retries: 0 }),
