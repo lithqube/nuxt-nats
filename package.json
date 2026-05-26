@@ -1,6 +1,6 @@
 {
   "name": "nuxt-nats",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "Nuxt module for NATS JetStream — server-side publish, typed consumers, KV, stream provisioning",
   "keywords": [
     "nuxt",

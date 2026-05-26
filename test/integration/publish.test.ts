@@ -48,6 +48,47 @@ describe('jsPublish', () => {
     expect(after - before).toBe(2)
   })
 
+  it('forwards custom headers to the NATS message', async () => {
+    const traceId = 'test-trace-abc123'
+    const durable = 'pub-headers-with-msgid'
+    await ctx.jsm.consumers.add('PUB_TEST', {
+      durable_name: durable,
+      ack_policy: 'explicit',
+      deliver_policy: 'new',
+      filter_subjects: ['pub.traced'],
+    } as any)
+
+    await jsPublish('pub.traced', { id: 'trace-1' }, { msgId: 'traced-1', headers: { 'X-Trace-Id': traceId } })
+
+    const consumer = await ctx.js.consumers.get('PUB_TEST', durable)
+    const msgs = await consumer.fetch({ max_messages: 1, expires: 5000 })
+    for await (const msg of msgs) {
+      expect(msg.headers?.get('X-Trace-Id')).toBe(traceId)
+      expect(msg.headers?.get('Nats-Msg-Id')).toBe('traced-1')
+      msg.ack()
+    }
+  })
+
+  it('sets custom headers without msgId', async () => {
+    const traceId = 'headers-only-trace'
+    const durable = 'pub-headers-no-msgid'
+    await ctx.jsm.consumers.add('PUB_TEST', {
+      durable_name: durable,
+      ack_policy: 'explicit',
+      deliver_policy: 'new',
+      filter_subjects: ['pub.headers-only'],
+    } as any)
+
+    await jsPublish('pub.headers-only', { id: 'trace-2' }, { headers: { 'X-Trace-Id': traceId } })
+
+    const consumer = await ctx.js.consumers.get('PUB_TEST', durable)
+    const msgs = await consumer.fetch({ max_messages: 1, expires: 5000 })
+    for await (const msg of msgs) {
+      expect(msg.headers?.get('X-Trace-Id')).toBe(traceId)
+      msg.ack()
+    }
+  })
+
   it('rejects publish to a subject not covered by any stream', async () => {
     await expect(
       jsPublish('no-stream.event', { id: '1' }, { timeout: 1000, retries: 0 }),
