@@ -11,7 +11,7 @@ NATS JetStream integration for Nuxt. Server-side publish, typed consumers, KV an
 
 ## Features
 
-- **JetStream publish** with automatic JSON encoding, retry, and per-message deduplication (`Nats-Msg-Id`)
+- **JetStream publish** with automatic JSON encoding, retry, per-message deduplication (`Nats-Msg-Id`), and custom NATS message headers
 - **Pull consumers** with ackWait heartbeats, configurable backoff, and dead-letter routing
 - **KV buckets** via `useKV(bucket)` — cached per process
 - **Object Store** via `useObj(bucket)` — stream large blobs through Nitro handlers
@@ -62,12 +62,14 @@ All server utilities are auto-imported inside `server/` — no manual imports ne
 // server/api/orders.post.ts
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
+  const traceId = getRequestHeader(event, 'x-trace-id') ?? crypto.randomUUID()
 
   await jsPublish('orders.created', {
     id: body.id,
     total: body.total,
   }, {
-    msgId: body.id,   // deduplication key
+    msgId: body.id,                          // deduplication key
+    headers: { 'X-Trace-Id': traceId },      // forwarded to all consumers
   })
 
   return { ok: true }

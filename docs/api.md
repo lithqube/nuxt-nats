@@ -214,12 +214,45 @@ function jsPublish(
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `msgId` | `string` | — | Idempotency key. Sets `Nats-Msg-Id` header. Dedup window is per-stream. |
+| `msgId` | `string` | — | Idempotency key. Sets `Nats-Msg-Id` header. Dedup window is per-stream. Always wins over a `Nats-Msg-Id` key in `headers`. |
 | `timeout` | `number` | `5000` | PubAck timeout in ms |
 | `retries` | `number` | `3` | Max retry attempts on failure |
 | `retryDelay` | `number` | `200` | Initial retry delay in ms (doubles each attempt) |
+| `headers` | `Record<string, string>` | — | Custom NATS message headers forwarded to all consumers (e.g. tracing headers). Applied before `msgId` — `msgId` always controls deduplication regardless of what `headers` contains. |
 
 Throws after all retries are exhausted.
+
+**Forwarding tracing headers:**
+
+```ts
+// server/api/orders.post.ts
+export default defineEventHandler(async (event) => {
+  const traceId = getRequestHeader(event, 'x-trace-id') ?? crypto.randomUUID()
+
+  await jsPublish('orders.created', { id: '123' }, {
+    msgId: '123',
+    headers: {
+      'X-Trace-Id': traceId,
+      'X-Correlation-Id': traceId,
+    },
+  })
+
+  return { ok: true }
+})
+```
+
+Consumers receive the headers on the `JsMsg` object:
+
+```ts
+defineNatsConsumer({
+  stream: 'ORDERS',
+  durable: 'billing',
+  handler(msg) {
+    const traceId = msg.headers?.get('X-Trace-Id')
+    // ...
+  },
+})
+```
 
 ---
 
