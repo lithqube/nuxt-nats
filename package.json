@@ -54,6 +54,8 @@
     "dev:build": "nuxt build playground",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxt prepare playground",
     "release": "npm run lint && npm run test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
+    "release:alpha": "npm run version:bump-alpha && npm run lint && npm run test:all && npm run prepack && npm publish --tag alpha && git add package.json package-lock.json && git commit -m \"chore: release $(node -p \\\"require('./package.json').version\\\")\" && git push",
+    "release:stable": "npm run lint && npm run test:all && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
     "lint": "eslint .",
     "test": "NODE_OPTIONS=--max-old-space-size=4096 vitest run",
     "test:watch": "NODE_OPTIONS=--max-old-space-size=4096 vitest watch",

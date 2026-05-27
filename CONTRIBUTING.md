@@ -68,14 +68,52 @@ Non-trivial design changes should be captured as an ADR in `docs/adr/`. See exis
 
 ## Releases
 
-Maintainers cut releases. The workflow is:
+Maintainers cut releases. There are two release paths:
+
+### Alpha release (pre-release, `alpha` dist-tag)
+
+Bumps `0.x.y-alpha.N → 0.x.y-alpha.N+1`, runs all tests, publishes under the `alpha` tag, and commits + pushes the version bump in one step:
 
 ```bash
-npm run version:bump-alpha     # or :bump-minor / :bump-major
-npm run release                # lint + test + prepack + changelogen + publish
+npm run release:alpha
 ```
 
-Alpha versions publish under the `alpha` dist-tag and do not become the default for `npm install nuxt-nats`.
+Consumers must opt in explicitly — `npm install nuxt-nats` still installs the latest stable.
+
+```bash
+npm install nuxt-nats@alpha   # install latest alpha
+```
+
+### Stable release
+
+Bumps to the next stable version via `changelogen --release` (prompts for semver bump), runs all tests, publishes as the default `latest` tag, and pushes the git tag:
+
+```bash
+npm run release:stable
+```
+
+### Manual version control
+
+If you need to set the version separately before releasing:
+
+```bash
+npm run version:bump-alpha     # 0.x.y-alpha.N → 0.x.y-alpha.N+1
+npm run version:bump-minor     # 0.x.y → 0.(x+1).0-alpha.0
+npm run version:bump-major     # 0.x.y → 1.0.0-alpha.0
+npm run version:print          # print current version
+npm run version:print-tag      # print v0.x.y-alpha.N
+```
+
+### npm OTP
+
+If your npm account has 2FA enabled, `npm publish` will pause and print an auth URL:
+
+```
+Open this URL in your browser to authenticate:
+  https://www.npmjs.com/auth/cli/<token>
+```
+
+Open the URL, approve the publish in the browser, and npm completes automatically.
 
 ## Reporting bugs and feature requests
 
