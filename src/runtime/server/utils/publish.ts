@@ -19,6 +19,8 @@ export interface PublishOpts {
   retries?: number
   /** Initial retry delay in ms (doubles each attempt). Default: 200 */
   retryDelay?: number
+  /** Custom NATS message headers (e.g. tracing headers forwarded to consumers). */
+  headers?: Record<string, string>
 }
 
 /**
@@ -27,6 +29,7 @@ export interface PublishOpts {
  *
  * @example
  *   await jsPublish('user.created', { id: '123' }, { msgId: '123' })
+ *   await jsPublish('user.created', { id: '123' }, { msgId: '123', headers: { 'X-Trace-Id': traceId } })
  */
 export async function jsPublish<S extends keyof NatsEvents>(
   subject: S,
@@ -43,15 +46,20 @@ export async function jsPublish(
   payload: AnyPayload,
   opts: PublishOpts = {},
 ): Promise<void> {
-  const { msgId, timeout = 5000, retries = 3, retryDelay = 200 } = opts
+  const { msgId, timeout = 5000, retries = 3, retryDelay = 200, headers: extraHeaders } = opts
   const js = useJetStream()
   const data = typeof payload === 'string' ? payload : JSON.stringify(payload)
   const encoded = new TextEncoder().encode(data)
 
   const pubOpts: Partial<JetStreamPublishOptions> = { timeout }
-  if (msgId) {
+  if (msgId || extraHeaders) {
     const h = headers()
-    h.set('Nats-Msg-Id', msgId)
+    if (extraHeaders) {
+      for (const [k, v] of Object.entries(extraHeaders)) h.set(k, v)
+    }
+    // Set after extraHeaders so msgId always controls dedup — callers cannot
+    // accidentally overwrite the dedup key via the headers option.
+    if (msgId) h.set('Nats-Msg-Id', msgId)
     pubOpts.headers = h
   }
 
