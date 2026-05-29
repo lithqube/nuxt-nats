@@ -192,7 +192,7 @@ describe('jsPublish', () => {
     expect(received).toBe(1)
   })
 
-  it('traceId does not override explicit headers value', async () => {
+  it('traceId takes precedence over headers[\'X-Trace-Id\']', async () => {
     const durable = 'pub-traceid-override'
     await ctx.jsm.consumers.add('PUB_TEST', {
       durable_name: durable,
