@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { JetStreamApiError } from '@nats-io/jetstream'
 import { provisionStreams } from '../../src/runtime/server/utils/provisionStreams'
 import type { StreamDefinition } from '../../src/runtime/server/utils/provisionStreams'
@@ -33,6 +33,9 @@ function makeJsm(overrides: {
     _update: update,
   }
 }
+
+// Restore all console spies after each test — prevents leaking mocks if a test throws
+afterEach(() => { vi.restoreAllMocks() })
 
 const baseDef: StreamDefinition = {
   name: 'DOCUMENTS',
@@ -117,7 +120,6 @@ describe('provisionStreams — provision: startup', () => {
     await provisionStreams(jsm as any, [{ ...baseDef, provision: 'startup' }])
     expect(jsm._update).not.toHaveBeenCalled()
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('already exists'))
-    warn.mockRestore()
   })
 
   it('logs error for non-10058 failures', async () => {
@@ -125,7 +127,6 @@ describe('provisionStreams — provision: startup', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     await provisionStreams(jsm as any, [{ ...baseDef, provision: 'startup' }])
     expect(error).toHaveBeenCalledWith(expect.stringContaining('Failed to provision'), expect.any(Error))
-    error.mockRestore()
   })
 })
 
@@ -153,7 +154,6 @@ describe('provisionStreams — provision: update', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await provisionStreams(jsm as any, [{ ...baseDef, provision: 'update' }])
     expect(warn).not.toHaveBeenCalled()
-    warn.mockRestore()
   })
 
   it('logs error when update itself fails', async () => {
@@ -161,7 +161,6 @@ describe('provisionStreams — provision: update', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     await provisionStreams(jsm as any, [{ ...baseDef, provision: 'update' }])
     expect(error).toHaveBeenCalledWith(expect.stringContaining('Failed to update'), expect.any(Error))
-    error.mockRestore()
   })
 
   it('logs error for non-10058 add failures even in update mode', async () => {
@@ -170,6 +169,5 @@ describe('provisionStreams — provision: update', () => {
     await provisionStreams(jsm as any, [{ ...baseDef, provision: 'update' }])
     expect(jsm._update).not.toHaveBeenCalled()
     expect(error).toHaveBeenCalledWith(expect.stringContaining('Failed to provision'), expect.any(Error))
-    error.mockRestore()
   })
 })

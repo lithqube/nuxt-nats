@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { startNats, stopNats, type NatsTestContext } from './setup'
 import { parseDuration } from '../../src/runtime/server/utils/parseDuration'
 import { provisionStreams } from '../../src/runtime/server/utils/provisionStreams'
@@ -8,6 +8,8 @@ let ctx: NatsTestContext
 beforeAll(async () => {
   ctx = await startNats()
 }, 30_000)
+
+afterEach(() => { vi.restoreAllMocks() })
 
 afterAll(async () => {
   await stopNats(ctx)
@@ -105,8 +107,6 @@ describe('provisionStreams — provision: startup', () => {
     const info = await ctx.jsm.streams.info('PROV_STARTUP_EXISTS')
     expect(info.config.subjects).toContain('prov.startup.exists.original.>')
     expect(info.config.subjects).not.toContain('prov.startup.exists.changed.>')
-
-    warn.mockRestore()
   })
 
   it('skips streams with provision: never', async () => {
@@ -171,6 +171,5 @@ describe('provisionStreams — provision: update', () => {
     }])
 
     expect(warn).not.toHaveBeenCalled()
-    warn.mockRestore()
   })
 })

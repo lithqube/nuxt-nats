@@ -57,6 +57,13 @@ describe('useNatsHooks — onReconnect', () => {
     useNatsHooks({ onReconnect: () => { throw new Error('hook error') } })
     expect(() => _fireReconnect('nats://localhost:4222')).not.toThrow()
   })
+
+  it('does not throw if an async hook rejects', async () => {
+    useNatsHooks({ onReconnect: async () => { throw new Error('async hook error') } })
+    expect(() => _fireReconnect('nats://localhost:4222')).not.toThrow()
+    // Give the rejected promise a tick to settle without unhandled rejection
+    await new Promise(r => setTimeout(r, 0))
+  })
 })
 
 describe('useNatsHooks — onDisconnect', () => {
