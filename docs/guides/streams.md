@@ -22,12 +22,17 @@ nats: {
 },
 ```
 
-### provision: 'startup' vs 'never'
+### provision modes
 
 | Value | Behaviour |
 |---|---|
-| `'never'` (default) | Module does not touch the stream. Create it externally. |
-| `'startup'` | Module calls `jsm.streams.add()` on every boot. Idempotent if config matches. |
+| `'never'` (default) | Module does not touch the stream. Create it externally via CLI or IaC. |
+| `'startup'` | Calls `jsm.streams.add()` on every boot. If the stream already exists with a different config, logs a warning and skips. |
+| `'update'` | Calls `jsm.streams.add()` on every boot. If the stream already exists with a different config, calls `jsm.streams.update()` to reconcile in place. |
+
+**When to use `'update'`:** Use when your app owns the authoritative stream config and the stream is shared with other services that may add subjects dynamically. On every boot the app ensures the stream reflects the declared config — useful when subjects are managed by multiple services and your app is responsible for keeping them current.
+
+**`'update'` vs `'startup'`:** `'startup'` warns and skips on config drift (safe for production, prevents accidental overwrites). `'update'` reconciles automatically (useful for local dev and shared streams where the app is the owner). Note that `jsm.streams.update()` cannot change `storage` or `retention` on an existing stream — those require delete-and-recreate.
 
 In production, prefer `'never'` and provision via the NATS CLI or IaC. See [ADR-008](../adr/008-stream-provisioning.md) for the rationale.
 

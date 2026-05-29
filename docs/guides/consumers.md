@@ -208,6 +208,45 @@ If `Num Pending` grows unbounded, processing is slower than the publish rate. Op
 2. Increase batch size — the module currently processes one message at a time (`max_messages: 1`). Use `useJetStream()` directly for custom batch consumers
 3. Optimize the handler — reduce external call latency (DB queries, HTTP requests)
 
+## Ephemeral consumers (SSE / request-scoped)
+
+For SSE endpoints that wait for a single matching event, use `useEphemeralConsumer()`. It creates an ordered ephemeral consumer scoped to the request lifetime and handles three concerns automatically:
+
+- **Timeout** — fires `onTimeout` when `timeoutMs` elapses
+- **Client disconnect** — fires `onDisconnect` when `handle.stop()` is called before a match
+- **Per-message errors** — caught and isolated; the loop continues to the next message
+
+```ts
+// server/api/orders/[id]/status.get.ts
+export default defineEventHandler(async (event) => {
+  const id = getRouterParam(event, 'id')!
+  const stream = createEventStream(event)
+
+  const handle = await useEphemeralConsumer({
+    stream: 'ORDERS',
+    filterSubjects: ['orders.*.shipped'],
+    timeoutMs: 30_000,
+    async onMessage(msg) {
+      const payload = JSON.parse(new TextDecoder().decode(msg.data))
+      if (payload.id !== id) return false    // not our order — keep waiting
+      msg.ack()
+      await stream.push({ event: 'shipped', data: JSON.stringify(payload) })
+      await stream.close()
+      return true                            // stop consuming
+    },
+    onTimeout: async () => {
+      await stream.push({ event: 'timeout', data: '{}' })
+      await stream.close()
+    },
+  })
+
+  stream.onClosed(() => handle.stop())       // client disconnected before match
+  return stream.send()
+})
+```
+
+`handle.stop()` is idempotent — safe to call multiple times and from `onClosed`.
+
 ## Ordered consumers (advanced)
 
 For event sourcing or read model rebuilds — ordered, ephemeral delivery from a specific sequence — access the JetStream client directly:

@@ -19,6 +19,10 @@ export interface PublishOpts {
   retries?: number
   /** Initial retry delay in ms (doubles each attempt). Default: 200 */
   retryDelay?: number
+  /** Sets the X-Trace-Id header for distributed tracing propagation. */
+  traceId?: string
+  /** Sets the X-Correlation-Id header for request correlation across services. */
+  correlationId?: string
   /** Custom NATS message headers (e.g. tracing headers forwarded to consumers). */
   headers?: Record<string, string>
 }
@@ -46,18 +50,21 @@ export async function jsPublish(
   payload: AnyPayload,
   opts: PublishOpts = {},
 ): Promise<void> {
-  const { msgId, timeout = 5000, retries = 3, retryDelay = 200, headers: extraHeaders } = opts
+  const { msgId, timeout = 5000, retries = 3, retryDelay = 200, traceId, correlationId, headers: extraHeaders } = opts
   const js = useJetStream()
   const data = typeof payload === 'string' ? payload : JSON.stringify(payload)
   const encoded = new TextEncoder().encode(data)
 
   const pubOpts: Partial<JetStreamPublishOptions> = { timeout }
-  if (msgId || extraHeaders) {
+  if (msgId || traceId || correlationId || extraHeaders) {
     const h = headers()
     if (extraHeaders) {
       for (const [k, v] of Object.entries(extraHeaders)) h.set(k, v)
     }
-    // Set after extraHeaders so msgId always controls dedup — callers cannot
+    // Typed trace fields set after extraHeaders so they are not accidentally overwritten.
+    if (traceId) h.set('X-Trace-Id', traceId)
+    if (correlationId) h.set('X-Correlation-Id', correlationId)
+    // Set last so msgId always controls dedup — callers cannot
     // accidentally overwrite the dedup key via the headers option.
     if (msgId) h.set('Nats-Msg-Id', msgId)
     pubOpts.headers = h

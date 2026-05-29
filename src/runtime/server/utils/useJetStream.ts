@@ -16,3 +16,15 @@ export function useJetStreamManager(): JetStreamManager {
   }
   return jsm
 }
+
+/**
+ * Returns the JetStream client, or null if the NATS connection is not yet established.
+ * Use this in handlers where you want to return a clean error instead of throwing a 500.
+ *
+ * @example
+ *   const js = useJetStreamIfAvailable()
+ *   if (!js) throw createError({ statusCode: 503, message: 'NATS not available' })
+ */
+export function useJetStreamIfAvailable(): JetStreamClient | null {
+  return getJetStream() ?? null
+}

@@ -42,6 +42,117 @@ function useJetStream(): JetStreamClient
 
 Use for direct JetStream operations beyond what `jsPublish` and `defineNatsConsumer` expose:
 
+---
+
+## useJetStreamIfAvailable()
+
+Returns the singleton `JetStreamClient`, or `null` if the NATS connection has not yet been established. Use in handlers where you want a clean `503` instead of an unhandled `500`.
+
+```ts
+function useJetStreamIfAvailable(): JetStreamClient | null
+```
+
+```ts
+export default defineEventHandler(async (event) => {
+  const js = useJetStreamIfAvailable()
+  if (!js) throw createError({ statusCode: 503, message: 'NATS not available' })
+  // ...
+})
+```
+
+---
+
+## useNatsHooks(hooks)
+
+Register callbacks for NATS connection lifecycle events. Call from a Nitro plugin. Multiple calls accumulate — all registered callbacks are invoked in registration order. Hook errors are isolated and never affect the module.
+
+```ts
+function useNatsHooks(hooks: {
+  onConnectError?: (err: Error) => void | Promise<void>
+  onReconnect?: (server: string) => void | Promise<void>
+  onDisconnect?: (server: string) => void | Promise<void>
+}): void
+```
+
+| Hook | When it fires |
+|---|---|
+| `onConnectError` | Initial connection attempt fails on boot |
+| `onReconnect` | Client successfully reconnects after a disconnect |
+| `onDisconnect` | Client loses its connection to a server |
+
+```ts
+// server/plugins/nats-hooks.ts
+export default defineNitroPlugin(() => {
+  useNatsHooks({
+    onConnectError: (err) => logger.error('NATS connect failed', err),
+    onReconnect: (server) => metrics.increment('nats.reconnect', { server }),
+    onDisconnect: (server) => logger.warn('NATS disconnected', { server }),
+  })
+})
+```
+
+---
+
+## useEphemeralConsumer(opts)
+
+Creates a request-scoped ordered ephemeral JetStream consumer. Designed for SSE endpoints that wait for a single matching event. Manages timeout and client-disconnect cleanup automatically.
+
+```ts
+async function useEphemeralConsumer(opts: EphemeralConsumerOptions): Promise<EphemeralConsumerHandle>
+```
+
+**EphemeralConsumerOptions:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `stream` | `string` | — | JetStream stream name |
+| `filterSubjects` | `string[]` | — | Subject filter(s) for the ordered consumer |
+| `onMessage` | `(msg: JsMsg) => Promise<boolean \| void> \| boolean \| void` | — | Called per message. Return `true` to stop; `false`/void to continue. Per-message errors are caught and swallowed — the loop continues. |
+| `timeoutMs` | `number` | `30_000` | Total wait timeout in ms |
+| `onTimeout` | `() => Promise<void> \| void` | — | Called when `timeoutMs` elapses with no match |
+| `onDisconnect` | `() => Promise<void> \| void` | — | Called when `handle.stop()` is called before a match (client disconnected) |
+
+**EphemeralConsumerHandle:**
+
+```ts
+interface EphemeralConsumerHandle {
+  stop(): void   // idempotent
+}
+```
+
+```ts
+// server/api/orders/[id]/status.get.ts
+export default defineEventHandler(async (event) => {
+  const id = getRouterParam(event, 'id')!
+  const stream = createEventStream(event)
+
+  const handle = await useEphemeralConsumer({
+    stream: 'ORDERS',
+    filterSubjects: ['orders.*.shipped'],
+    timeoutMs: 30_000,
+    async onMessage(msg) {
+      const payload = JSON.parse(new TextDecoder().decode(msg.data))
+      if (payload.id !== id) return false    // not ours — keep waiting
+      msg.ack()
+      await stream.push({ event: 'shipped', data: JSON.stringify(payload) })
+      await stream.close()
+      return true                            // done
+    },
+    onTimeout: async () => {
+      await stream.push({ event: 'timeout', data: '{}' })
+      await stream.close()
+    },
+  })
+
+  stream.onClosed(() => handle.stop())       // client disconnected
+  return stream.send()
+})
+```
+
+---
+
+## useJetStream() (continued)
+
 ```ts
 const js = useJetStream()
 
@@ -218,7 +329,9 @@ function jsPublish(
 | `timeout` | `number` | `5000` | PubAck timeout in ms |
 | `retries` | `number` | `3` | Max retry attempts on failure |
 | `retryDelay` | `number` | `200` | Initial retry delay in ms (doubles each attempt) |
-| `headers` | `Record<string, string>` | — | Custom NATS message headers forwarded to all consumers (e.g. tracing headers). Applied before `msgId` — `msgId` always controls deduplication regardless of what `headers` contains. |
+| `traceId` | `string` | — | Sets the `X-Trace-Id` header. Applied after `headers`, so it takes precedence over a `X-Trace-Id` key in `headers`. |
+| `correlationId` | `string` | — | Sets the `X-Correlation-Id` header. Same precedence as `traceId`. |
+| `headers` | `Record<string, string>` | — | Custom NATS message headers. Applied first — `traceId`, `correlationId`, and `msgId` all override conflicting keys. |
 
 Throws after all retries are exhausted.
 
@@ -231,10 +344,8 @@ export default defineEventHandler(async (event) => {
 
   await jsPublish('orders.created', { id: '123' }, {
     msgId: '123',
-    headers: {
-      'X-Trace-Id': traceId,
-      'X-Correlation-Id': traceId,
-    },
+    traceId,             // sets X-Trace-Id
+    correlationId: traceId,  // sets X-Correlation-Id
   })
 
   return { ok: true }

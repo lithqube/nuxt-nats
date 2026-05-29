@@ -83,6 +83,7 @@ describe('defineNatsConsumer', () => {
 
   afterEach(() => {
     stopAllConsumers()
+    vi.restoreAllMocks()
   })
 
   it('returns noop when NUXT_NATS_WORKERS is not set', () => {
@@ -248,6 +249,101 @@ describe('defineNatsConsumer', () => {
       await wait()
 
       expect(nak).toHaveBeenCalledWith(15_000)
+    })
+  })
+
+  describe('non-JSON payload', () => {
+    it('passes raw string to handler when payload is not valid JSON', async () => {
+      const handler = vi.fn().mockImplementation(async (msg: any) => { msg.ack() })
+      const msg = makeMsg({ data: 'not-valid-json{{{' })
+      const handleRef: { current?: { stop: () => void } } = {}
+      setupJsMock([msg], handleRef)
+
+      const handle = defineNatsConsumer({ stream: 'ORDERS', durable: 'billing', handler })
+      handleRef.current = handle
+      await wait()
+
+      expect(handler).toHaveBeenCalledOnce()
+      expect(handler.mock.calls[0]![1]).toBe('not-valid-json{{{')
+    })
+  })
+
+  describe('heartbeat', () => {
+    it('calls msg.working() at ackWait/2 intervals during a slow handler', async () => {
+      const working = vi.fn()
+      const ack = vi.fn()
+
+      // The handler blocks until we release it
+      let resolveHandler!: () => void
+      let handlerBodyStarted = false
+
+      vi.mocked(useJetStream).mockReturnValue({
+        consumers: {
+          get: vi.fn().mockResolvedValue({
+            consume: vi.fn().mockResolvedValue({
+              stop: vi.fn(),
+              [Symbol.asyncIterator]: async function* () {
+                yield makeMsg({ working, ack })
+                // stop the consumer after the one message
+                await new Promise(r => setTimeout(r, 50))
+              },
+            }),
+          }),
+        },
+      } as any)
+
+      const slowDone = new Promise<void>(r => (resolveHandler = r))
+      const handle = defineNatsConsumer({
+        stream: 'ORDERS',
+        durable: 'heartbeat-test',
+        ackWait: 200, // heartbeat fires at 100ms
+        handler: async (m: any) => {
+          handlerBodyStarted = true
+          await slowDone
+          m.ack()
+        },
+      })
+
+      // Wait for handler to start
+      for (let i = 0; i < 20 && !handlerBodyStarted; i++) {
+        await wait(20)
+      }
+      expect(handlerBodyStarted).toBe(true)
+
+      // Wait past one heartbeat interval (100ms)
+      await wait(150)
+      expect(working).toHaveBeenCalled()
+
+      resolveHandler()
+      handle.stop()
+      await wait(50)
+    })
+  })
+
+  describe('consumer loop error', () => {
+    it('logs the error and does not propagate when consumer.consume() throws', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const consumeErr = new Error('connection lost')
+
+      vi.mocked(useJetStream).mockReturnValue({
+        consumers: {
+          get: vi.fn().mockImplementation(async () => ({
+            consume: vi.fn().mockRejectedValue(consumeErr),
+          })),
+        },
+      } as any)
+
+      const handle = defineNatsConsumer({
+        stream: 'ORDERS',
+        durable: 'billing',
+        handler: vi.fn(),
+      })
+
+      // Wait for the first async iteration to run and hit the catch block
+      await wait(100)
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('loop error'), consumeErr)
+
+      handle.stop()
     })
   })
 })

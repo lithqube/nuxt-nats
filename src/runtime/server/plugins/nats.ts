@@ -2,9 +2,10 @@ import { defineNitroPlugin, useRuntimeConfig } from 'nitropack/runtime'
 import { connect, wsconnect } from '@nats-io/transport-node'
 import { nkeyAuthenticator, type NatsConnection, type Status } from '@nats-io/nats-core'
 import { jetstream, jetstreamManager } from '@nats-io/jetstream'
-import type { JetStreamManager, StreamConfig } from '@nats-io/jetstream'
-import { parseDuration } from '../utils/parseDuration'
 import { stopAllConsumers } from '../utils/consumer'
+import { provisionStreams } from '../utils/provisionStreams'
+import type { StreamDefinition } from '../utils/provisionStreams'
+import { _fireConnectError, _fireReconnect, _fireDisconnect } from '../utils/useNatsHooks'
 import {
   getNatsConnection,
   setNatsConnection,
@@ -54,37 +55,6 @@ async function buildConnection(cfg: NatsRuntimeConfig): Promise<NatsConnection> 
   return connect({ servers: cfg.servers, ...opts })
 }
 
-async function provisionStreams(jsm: JetStreamManager, streams: StreamDefinitionRuntime[]) {
-  for (const def of streams) {
-    if (def.provision !== 'startup') continue
-
-    const cfg: Partial<StreamConfig> = {
-      name: def.name,
-      subjects: def.subjects,
-      retention: def.retention === 'workqueue' ? 'workqueue' : def.retention === 'interest' ? 'interest' : 'limits',
-      storage: def.storage === 'memory' ? 'memory' : 'file',
-      num_replicas: def.replicas ?? 1,
-      max_bytes: def.maxBytes ?? -1,
-    }
-    if (def.maxAge) cfg.max_age = parseDuration(def.maxAge)
-    if (def.duplicateWindow) cfg.duplicate_window = parseDuration(def.duplicateWindow)
-
-    try {
-      await jsm.streams.add(cfg as StreamConfig)
-      console.log(`[nuxt-nats] Stream "${def.name}" provisioned`)
-    }
-    catch (err: unknown) {
-      const apiErr = (err as { api_error?: { err_code?: number } }).api_error
-      if (apiErr?.err_code === 10058) {
-        console.warn(`[nuxt-nats] Stream "${def.name}" already exists with a different config. Skipping — reconcile manually or via CLI.`)
-      }
-      else {
-        console.error(`[nuxt-nats] Failed to provision stream "${def.name}":`, err)
-      }
-    }
-  }
-}
-
 async function drainAndClose() {
   const nc = getNatsConnection()
   if (_isClosing || !nc) return
@@ -103,18 +73,6 @@ async function drainAndClose() {
   _isClosing = false
 }
 
-interface StreamDefinitionRuntime {
-  name: string
-  subjects: string[]
-  retention?: string
-  storage?: string
-  replicas?: number
-  maxBytes?: number
-  maxAge?: string
-  duplicateWindow?: string
-  provision?: string
-}
-
 interface NatsRuntimeConfig {
   servers: string[]
   wsServers: string[]
@@ -127,7 +85,7 @@ interface NatsRuntimeConfig {
   jsDomain: string
   jsApiPrefix: string
   tls?: { caFile?: string, certFile?: string, keyFile?: string }
-  streams: StreamDefinitionRuntime[]
+  streams: StreamDefinition[]
   consumers: unknown[]
   health: { enabled?: boolean, endpoint?: string }
 }
@@ -143,6 +101,7 @@ export default defineNitroPlugin(async (nitroApp) => {
   }
   catch (err) {
     console.error('[nuxt-nats] Failed to connect to NATS:', err)
+    _fireConnectError(err instanceof Error ? err : new Error(String(err)))
     return
   }
 
@@ -187,11 +146,14 @@ export default defineNitroPlugin(async (nitroApp) => {
 })
 
 function handleStatus(s: Status) {
+  const server = (s as { server?: string }).server ?? ''
   if (s.type === 'disconnect') {
-    console.warn('[nuxt-nats] Disconnected from NATS:', (s as { server?: string }).server)
+    console.warn('[nuxt-nats] Disconnected from NATS:', server)
+    _fireDisconnect(server)
   }
   else if (s.type === 'reconnect') {
-    console.log('[nuxt-nats] Reconnected to NATS:', (s as { server?: string }).server)
+    console.log('[nuxt-nats] Reconnected to NATS:', server)
+    _fireReconnect(server)
   }
   else if (s.type === 'error') {
     console.error('[nuxt-nats] NATS error:', (s as { error?: Error }).error)
