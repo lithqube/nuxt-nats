@@ -10,7 +10,7 @@ export interface EphemeralConsumerOptions {
    * Called for each message. Return true to stop the consumer (message matched),
    * false/void to continue consuming.
    */
-  onMessage: (msg: JsMsg) => Promise<boolean | void> | boolean | void
+  onMessage: (msg: JsMsg) => Promise<boolean | undefined> | boolean | undefined
   /** Total wait timeout in ms. Default: 30_000 */
   timeoutMs?: number
   /** Called when the timeout fires before a matching message is found. */
@@ -71,7 +71,9 @@ export async function useEphemeralConsumer(opts: EphemeralConsumerOptions): Prom
 
   const timer = setTimeout(async () => {
     stop()
-    try { await onTimeout?.() }
+    try {
+      await onTimeout?.()
+    }
     catch { /* caller-provided callback errors must not bubble */ }
   }, timeoutMs)
 
@@ -105,7 +107,9 @@ export async function useEphemeralConsumer(opts: EphemeralConsumerOptions): Prom
       const wasDisconnect = !stopped
       stop()
       if (wasDisconnect) {
-        try { onDisconnect?.() }
+        try {
+          onDisconnect?.()
+        }
         catch { /* ignore */ }
       }
     },

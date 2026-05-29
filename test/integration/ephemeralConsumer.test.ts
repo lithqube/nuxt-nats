@@ -141,7 +141,10 @@ describe('useEphemeralConsumer — stop / disconnect', () => {
       timeoutMs: 5_000,
     })
 
-    expect(() => { handle.stop(); handle.stop() }).not.toThrow()
+    expect(() => {
+      handle.stop()
+      handle.stop()
+    }).not.toThrow()
   })
 
   it('fires onDisconnect when stop() is called before a message arrives', async () => {

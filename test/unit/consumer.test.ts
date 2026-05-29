@@ -274,9 +274,6 @@ describe('defineNatsConsumer', () => {
 
       // The handler blocks until we release it
       let resolveHandler!: () => void
-      const handlerStarted = new Promise<void>((r) => {
-        // We'll resolve handlerStarted once the handler body begins
-      })
       let handlerBodyStarted = false
 
       vi.mocked(useJetStream).mockReturnValue({

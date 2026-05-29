@@ -37,22 +37,28 @@ export function useNatsHooks(hooks: {
 
 export function _fireConnectError(err: Error) {
   for (const h of _connectErrorHooks) {
-    try { Promise.resolve(h(err)).catch(() => {}) }
-    catch { /* hook errors must not affect the module */ }
+    try {
+      Promise.resolve(h(err)).catch((_e) => { /* async hook rejection — isolated */ })
+    }
+    catch { /* sync hook throw — isolated */ }
   }
 }
 
 export function _fireReconnect(server: string) {
   for (const h of _reconnectHooks) {
-    try { Promise.resolve(h(server)).catch(() => {}) }
-    catch {}
+    try {
+      Promise.resolve(h(server)).catch((_e) => { /* async hook rejection — isolated */ })
+    }
+    catch { /* sync hook throw — isolated */ }
   }
 }
 
 export function _fireDisconnect(server: string) {
   for (const h of _disconnectHooks) {
-    try { Promise.resolve(h(server)).catch(() => {}) }
-    catch {}
+    try {
+      Promise.resolve(h(server)).catch((_e) => { /* async hook rejection — isolated */ })
+    }
+    catch { /* sync hook throw — isolated */ }
   }
 }
 
