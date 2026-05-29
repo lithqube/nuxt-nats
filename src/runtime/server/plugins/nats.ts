@@ -6,6 +6,7 @@ import type { JetStreamManager } from '@nats-io/jetstream'
 import { stopAllConsumers } from '../utils/consumer'
 import { provisionStreams } from '../utils/provisionStreams'
 import type { StreamDefinition } from '../utils/provisionStreams'
+import { _fireConnectError, _fireReconnect, _fireDisconnect } from '../utils/useNatsHooks'
 import {
   getNatsConnection,
   setNatsConnection,
@@ -101,6 +102,7 @@ export default defineNitroPlugin(async (nitroApp) => {
   }
   catch (err) {
     console.error('[nuxt-nats] Failed to connect to NATS:', err)
+    _fireConnectError(err instanceof Error ? err : new Error(String(err)))
     return
   }
 
@@ -145,11 +147,14 @@ export default defineNitroPlugin(async (nitroApp) => {
 })
 
 function handleStatus(s: Status) {
+  const server = (s as { server?: string }).server ?? ''
   if (s.type === 'disconnect') {
-    console.warn('[nuxt-nats] Disconnected from NATS:', (s as { server?: string }).server)
+    console.warn('[nuxt-nats] Disconnected from NATS:', server)
+    _fireDisconnect(server)
   }
   else if (s.type === 'reconnect') {
-    console.log('[nuxt-nats] Reconnected to NATS:', (s as { server?: string }).server)
+    console.log('[nuxt-nats] Reconnected to NATS:', server)
+    _fireReconnect(server)
   }
   else if (s.type === 'error') {
     console.error('[nuxt-nats] NATS error:', (s as { error?: Error }).error)
