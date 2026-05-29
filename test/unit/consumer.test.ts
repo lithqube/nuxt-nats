@@ -83,6 +83,7 @@ describe('defineNatsConsumer', () => {
 
   afterEach(() => {
     stopAllConsumers()
+    vi.restoreAllMocks()
   })
 
   it('returns noop when NUXT_NATS_WORKERS is not set', () => {
@@ -343,7 +344,6 @@ describe('defineNatsConsumer', () => {
       expect(error).toHaveBeenCalledWith(expect.stringContaining('loop error'), consumeErr)
 
       handle.stop()
-      error.mockRestore()
     })
   })
 })
