@@ -56,7 +56,7 @@ async function buildConnection(cfg: NatsRuntimeConfig): Promise<NatsConnection> 
 
 async function provisionStreams(jsm: JetStreamManager, streams: StreamDefinitionRuntime[]) {
   for (const def of streams) {
-    if (def.provision !== 'startup') continue
+    if (def.provision !== 'startup' && def.provision !== 'update') continue
 
     const cfg: Partial<StreamConfig> = {
       name: def.name,
@@ -76,7 +76,18 @@ async function provisionStreams(jsm: JetStreamManager, streams: StreamDefinition
     catch (err: unknown) {
       const apiErr = (err as { api_error?: { err_code?: number } }).api_error
       if (apiErr?.err_code === 10058) {
-        console.warn(`[nuxt-nats] Stream "${def.name}" already exists with a different config. Skipping — reconcile manually or via CLI.`)
+        if (def.provision === 'update') {
+          try {
+            await jsm.streams.update(def.name, cfg as StreamConfig)
+            console.log(`[nuxt-nats] Stream "${def.name}" updated`)
+          }
+          catch (updateErr: unknown) {
+            console.error(`[nuxt-nats] Failed to update stream "${def.name}":`, updateErr)
+          }
+        }
+        else {
+          console.warn(`[nuxt-nats] Stream "${def.name}" already exists with a different config. Skipping — reconcile manually or via CLI.`)
+        }
       }
       else {
         console.error(`[nuxt-nats] Failed to provision stream "${def.name}":`, err)
@@ -112,7 +123,7 @@ interface StreamDefinitionRuntime {
   maxBytes?: number
   maxAge?: string
   duplicateWindow?: string
-  provision?: string
+  provision?: 'startup' | 'update' | 'never'
 }
 
 interface NatsRuntimeConfig {

@@ -16,8 +16,12 @@ export interface StreamDefinition {
   maxAge?: string
   maxBytes?: number
   duplicateWindow?: string
-  /** 'startup' auto-provisions on boot; 'never' skips (use CLI/IaC instead). Default: 'never' */
-  provision?: 'startup' | 'never'
+  /**
+   * 'startup'  — create the stream on boot; logs a warning if it already exists with a different config.
+   * 'update'   — create the stream on boot; update it in-place if it already exists.
+   * 'never'    — skip provisioning (use CLI/IaC instead). Default: 'never'
+   */
+  provision?: 'startup' | 'update' | 'never'
 }
 
 export interface ConsumerDefinition {
