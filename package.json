@@ -74,7 +74,7 @@
     "@nats-io/nats-core": "^3.4.0",
     "@nats-io/obj": "^3.4.0",
     "@nats-io/transport-node": "^3.4.0",
-    "@nuxt/kit": "^4.4.4",
+    "@nuxt/kit": "^4.4.6",
     "defu": "^6.1.4"
   },
   "devDependencies": {
@@ -82,14 +82,14 @@
     "@nuxt/devtools": "^3.2.4",
     "@nuxt/eslint-config": "^1.15.2",
     "@nuxt/module-builder": "^1.0.2",
-    "@nuxt/schema": "^4.4.4",
+    "@nuxt/schema": "^4.4.6",
     "@nuxt/test-utils": "^4.0.3",
-    "@testcontainers/nats": "^11.14.0",
+    "@testcontainers/nats": "^12.0.1",
     "@types/node": "latest",
     "changelogen": "^0.6.2",
     "eslint": "^10.3.0",
     "nuxt": "^4.4.4",
-    "testcontainers": "^11.14.0",
+    "testcontainers": "^12.0.1",
     "typescript": "~6.0.3",
     "vitest": "^4.1.5",
     "vue-tsc": "^3.2.8"
