@@ -45,7 +45,7 @@ Versions are published to npm — pre-releases under the `alpha` dist-tag.
 - Statement coverage: 85% → 99.2%
 - 58 unit tests, 48 integration tests (106 total, up from 48 at alpha.1)
 - New unit test files: `provisionStreams.test.ts`, `useNatsHooks.test.ts`, `useJetStreamIfAvailable.test.ts`, `ephemeralConsumer.test.ts`
-- Fixed spy leak pattern — `afterEach(vi.restoreAllMocks())` replaces manual `spy.mockRestore()` calls that silently leaked when tests threw
+- Fixed spy leak pattern — `afterEach(() => { vi.restoreAllMocks() })` replaces manual `spy.mockRestore()` calls that silently leaked when tests threw
 
 ---
 
