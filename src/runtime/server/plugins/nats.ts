@@ -2,9 +2,10 @@ import { defineNitroPlugin, useRuntimeConfig } from 'nitropack/runtime'
 import { connect, wsconnect } from '@nats-io/transport-node'
 import { nkeyAuthenticator, type NatsConnection, type Status } from '@nats-io/nats-core'
 import { jetstream, jetstreamManager } from '@nats-io/jetstream'
-import type { JetStreamManager, StreamConfig } from '@nats-io/jetstream'
-import { parseDuration } from '../utils/parseDuration'
+import type { JetStreamManager } from '@nats-io/jetstream'
 import { stopAllConsumers } from '../utils/consumer'
+import { provisionStreams } from '../utils/provisionStreams'
+import type { StreamDefinition } from '../utils/provisionStreams'
 import {
   getNatsConnection,
   setNatsConnection,
@@ -54,48 +55,6 @@ async function buildConnection(cfg: NatsRuntimeConfig): Promise<NatsConnection> 
   return connect({ servers: cfg.servers, ...opts })
 }
 
-async function provisionStreams(jsm: JetStreamManager, streams: StreamDefinitionRuntime[]) {
-  for (const def of streams) {
-    if (def.provision !== 'startup' && def.provision !== 'update') continue
-
-    const cfg: Partial<StreamConfig> = {
-      name: def.name,
-      subjects: def.subjects,
-      retention: def.retention === 'workqueue' ? 'workqueue' : def.retention === 'interest' ? 'interest' : 'limits',
-      storage: def.storage === 'memory' ? 'memory' : 'file',
-      num_replicas: def.replicas ?? 1,
-      max_bytes: def.maxBytes ?? -1,
-    }
-    if (def.maxAge) cfg.max_age = parseDuration(def.maxAge)
-    if (def.duplicateWindow) cfg.duplicate_window = parseDuration(def.duplicateWindow)
-
-    try {
-      await jsm.streams.add(cfg as StreamConfig)
-      console.log(`[nuxt-nats] Stream "${def.name}" provisioned`)
-    }
-    catch (err: unknown) {
-      const apiErr = (err as { api_error?: { err_code?: number } }).api_error
-      if (apiErr?.err_code === 10058) {
-        if (def.provision === 'update') {
-          try {
-            await jsm.streams.update(def.name, cfg as StreamConfig)
-            console.log(`[nuxt-nats] Stream "${def.name}" updated`)
-          }
-          catch (updateErr: unknown) {
-            console.error(`[nuxt-nats] Failed to update stream "${def.name}":`, updateErr)
-          }
-        }
-        else {
-          console.warn(`[nuxt-nats] Stream "${def.name}" already exists with a different config. Skipping — reconcile manually or via CLI.`)
-        }
-      }
-      else {
-        console.error(`[nuxt-nats] Failed to provision stream "${def.name}":`, err)
-      }
-    }
-  }
-}
-
 async function drainAndClose() {
   const nc = getNatsConnection()
   if (_isClosing || !nc) return
@@ -114,18 +73,6 @@ async function drainAndClose() {
   _isClosing = false
 }
 
-interface StreamDefinitionRuntime {
-  name: string
-  subjects: string[]
-  retention?: string
-  storage?: string
-  replicas?: number
-  maxBytes?: number
-  maxAge?: string
-  duplicateWindow?: string
-  provision?: 'startup' | 'update' | 'never'
-}
-
 interface NatsRuntimeConfig {
   servers: string[]
   wsServers: string[]
@@ -138,7 +85,7 @@ interface NatsRuntimeConfig {
   jsDomain: string
   jsApiPrefix: string
   tls?: { caFile?: string, certFile?: string, keyFile?: string }
-  streams: StreamDefinitionRuntime[]
+  streams: StreamDefinition[]
   consumers: unknown[]
   health: { enabled?: boolean, endpoint?: string }
 }

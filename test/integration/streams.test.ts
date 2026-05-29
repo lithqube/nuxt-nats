@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { startNats, stopNats, type NatsTestContext } from './setup'
 import { parseDuration } from '../../src/runtime/server/utils/parseDuration'
+import { provisionStreams } from '../../src/runtime/server/utils/provisionStreams'
 
 let ctx: NatsTestContext
 
@@ -65,5 +66,111 @@ describe('stream provisioning', () => {
     const info = await ctx.jsm.streams.info('TEST_WQ')
     expect(info.config.retention).toBe('workqueue')
     expect(info.config.storage).toBe('memory')
+  })
+})
+
+describe('provisionStreams — provision: startup', () => {
+  it('creates a new stream that does not exist yet', async () => {
+    await provisionStreams(ctx.jsm, [{
+      name: 'PROV_STARTUP_NEW',
+      subjects: ['prov.startup.new.>'],
+      storage: 'memory',
+      provision: 'startup',
+    }])
+
+    const info = await ctx.jsm.streams.info('PROV_STARTUP_NEW')
+    expect(info.config.name).toBe('PROV_STARTUP_NEW')
+    expect(info.config.subjects).toContain('prov.startup.new.>')
+  })
+
+  it('warns and leaves the existing stream unchanged when subjects differ', async () => {
+    await ctx.jsm.streams.add({
+      name: 'PROV_STARTUP_EXISTS',
+      subjects: ['prov.startup.exists.original.>'],
+      storage: 'memory',
+    } as any)
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await provisionStreams(ctx.jsm, [{
+      name: 'PROV_STARTUP_EXISTS',
+      subjects: ['prov.startup.exists.changed.>'],
+      storage: 'memory',
+      provision: 'startup',
+    }])
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('already exists'))
+
+    // Stream subjects must be unchanged
+    const info = await ctx.jsm.streams.info('PROV_STARTUP_EXISTS')
+    expect(info.config.subjects).toContain('prov.startup.exists.original.>')
+    expect(info.config.subjects).not.toContain('prov.startup.exists.changed.>')
+
+    warn.mockRestore()
+  })
+
+  it('skips streams with provision: never', async () => {
+    await provisionStreams(ctx.jsm, [{
+      name: 'PROV_NEVER',
+      subjects: ['prov.never.>'],
+      storage: 'memory',
+      provision: 'never',
+    }])
+
+    await expect(ctx.jsm.streams.info('PROV_NEVER')).rejects.toThrow()
+  })
+})
+
+describe('provisionStreams — provision: update', () => {
+  it('creates the stream when it does not exist yet', async () => {
+    await provisionStreams(ctx.jsm, [{
+      name: 'PROV_UPDATE_NEW',
+      subjects: ['prov.update.new.>'],
+      storage: 'memory',
+      provision: 'update',
+    }])
+
+    const info = await ctx.jsm.streams.info('PROV_UPDATE_NEW')
+    expect(info.config.name).toBe('PROV_UPDATE_NEW')
+    expect(info.config.subjects).toContain('prov.update.new.>')
+  })
+
+  it('updates an existing stream to add new subjects', async () => {
+    await ctx.jsm.streams.add({
+      name: 'PROV_UPDATE_EXISTS',
+      subjects: ['prov.update.exists.original.>'],
+      storage: 'memory',
+    } as any)
+
+    await provisionStreams(ctx.jsm, [{
+      name: 'PROV_UPDATE_EXISTS',
+      subjects: ['prov.update.exists.original.>', 'prov.update.exists.added.>'],
+      storage: 'memory',
+      provision: 'update',
+    }])
+
+    const info = await ctx.jsm.streams.info('PROV_UPDATE_EXISTS')
+    expect(info.config.subjects).toContain('prov.update.exists.original.>')
+    expect(info.config.subjects).toContain('prov.update.exists.added.>')
+  })
+
+  it('does not warn when updating an existing stream', async () => {
+    await ctx.jsm.streams.add({
+      name: 'PROV_UPDATE_QUIET',
+      subjects: ['prov.update.quiet.old.>'],
+      storage: 'memory',
+    } as any)
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await provisionStreams(ctx.jsm, [{
+      name: 'PROV_UPDATE_QUIET',
+      subjects: ['prov.update.quiet.old.>', 'prov.update.quiet.new.>'],
+      storage: 'memory',
+      provision: 'update',
+    }])
+
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
   })
 })
