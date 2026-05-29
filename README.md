@@ -11,11 +11,13 @@ NATS JetStream integration for Nuxt. Server-side publish, typed consumers, KV an
 
 ## Features
 
-- **JetStream publish** with automatic JSON encoding, retry, per-message deduplication (`Nats-Msg-Id`), and custom NATS message headers
+- **JetStream publish** with automatic JSON encoding, retry, per-message deduplication (`Nats-Msg-Id`), typed tracing headers, and custom NATS message headers
 - **Pull consumers** with ackWait heartbeats, configurable backoff, and dead-letter routing
+- **Ephemeral consumers** via `useEphemeralConsumer()` — request-scoped consumers with timeout, disconnect cleanup, and per-message error isolation (ideal for SSE endpoints)
+- **Connection lifecycle hooks** via `useNatsHooks()` — attach `onConnectError`, `onReconnect`, and `onDisconnect` callbacks for alerting and metrics
 - **KV buckets** via `useKV(bucket)` — cached per process
 - **Object Store** via `useObj(bucket)` — stream large blobs through Nitro handlers
-- **Stream auto-provisioning** on startup (opt-in per stream)
+- **Stream auto-provisioning** on startup (opt-in per stream, with `'update'` mode for config reconciliation)
 - **Health endpoint** at `/api/_nats/health` — connection status, RTT, JetStream account stats
 - **Typed subjects** — augment `NatsEvents` to get end-to-end type safety on `jsPublish`
 - **Graceful shutdown** — drains in-flight messages on `SIGTERM`/`SIGINT` (works around [nitrojs/nitro#4015](https://github.com/nitrojs/nitro/issues/4015))
@@ -69,7 +71,8 @@ export default defineEventHandler(async (event) => {
     total: body.total,
   }, {
     msgId: body.id,                          // deduplication key
-    headers: { 'X-Trace-Id': traceId },      // forwarded to all consumers
+    traceId,                                 // sets X-Trace-Id header
+    correlationId: traceId,                  // sets X-Correlation-Id header
   })
 
   return { ok: true }
@@ -114,6 +117,56 @@ export default defineEventHandler(async () => {
   return entry?.data   // ReadableStream
 })
 ```
+
+### Ephemeral consumers (SSE / request-scoped)
+
+For SSE endpoints that wait for a single matching event, use `useEphemeralConsumer()`. It creates an ordered, ephemeral JetStream consumer scoped to the request and handles timeout and client-disconnect cleanup automatically.
+
+```ts
+// server/api/orders/[id]/status.get.ts
+export default defineEventHandler(async (event) => {
+  const id = getRouterParam(event, 'id')!
+  const stream = createEventStream(event)
+
+  const handle = await useEphemeralConsumer({
+    stream: 'ORDERS',
+    filterSubjects: ['orders.*.shipped'],
+    timeoutMs: 30_000,
+    async onMessage(msg) {
+      const payload = JSON.parse(new TextDecoder().decode(msg.data))
+      if (payload.id !== id) return false          // not our order — keep waiting
+      msg.ack()
+      await stream.push({ event: 'shipped', data: JSON.stringify(payload) })
+      await stream.close()
+      return true                                  // done — stop the consumer
+    },
+    onTimeout: async () => {
+      await stream.push({ event: 'timeout', data: '{}' })
+      await stream.close()
+    },
+  })
+
+  stream.onClosed(() => handle.stop())             // client disconnected
+  return stream.send()
+})
+```
+
+### Connection lifecycle hooks
+
+Register callbacks for NATS connection events — useful for alerting and metrics:
+
+```ts
+// server/plugins/nats-hooks.ts
+export default defineNitroPlugin(() => {
+  useNatsHooks({
+    onConnectError: (err) => logger.error('NATS connect failed', err),
+    onReconnect: (server) => metrics.increment('nats.reconnect', { server }),
+    onDisconnect: (server) => logger.warn('NATS disconnected', { server }),
+  })
+})
+```
+
+Multiple `useNatsHooks()` calls accumulate — all registered callbacks are called in order. Hook errors are isolated and never affect the module.
 
 ### Consumers
 
@@ -196,7 +249,7 @@ export default defineNuxtConfig({
         retention: 'limits',      // 'limits' | 'workqueue' | 'interest'
         storage: 'file',          // 'file' | 'memory'
         replicas: 1,
-        provision: 'startup',     // 'startup' | 'never' (default: 'never')
+        provision: 'startup',     // 'startup' | 'update' | 'never' (default: 'never')
       },
     ],
 
@@ -263,7 +316,13 @@ For Cloudflare Workers, set `transport: 'ws'` and configure `wsServers`. Publish
 
 ### Stream provisioning
 
-`provision: 'startup'` is idempotent when config matches exactly. If an existing stream has a different config, the module logs a warning and skips — it never auto-updates (storage/retention changes can cause data loss). Use the `nats` CLI or IaC to reconcile.
+| `provision` | Behaviour |
+|---|---|
+| `'never'` (default) | Module does not touch the stream. Create it externally via CLI or IaC. |
+| `'startup'` | Calls `jsm.streams.add()` on boot. If the stream already exists with a different config, logs a warning and skips — never auto-updates. |
+| `'update'` | Calls `jsm.streams.add()` on boot. If the stream already exists with a different config, calls `jsm.streams.update()` to reconcile in place. Use when the stream config is owned by the app and shared with other services that may add subjects. |
+
+Use `'never'` in production with external IaC. Use `'startup'` for local dev where you want idempotent creation. Use `'update'` when you need the app to own the authoritative stream config (e.g. the stream is shared and the app is responsible for keeping subjects up to date).
 
 ## Contribution
 

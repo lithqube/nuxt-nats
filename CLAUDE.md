@@ -31,6 +31,9 @@ npm run test:types
 # Lint
 npm run lint
 
+# Coverage (requires @vitest/coverage-v8, already installed)
+npx vitest run --coverage
+
 # Build the distributable module
 npm run prepack
 
@@ -63,6 +66,18 @@ The plugin connects to NATS, provisions declared streams, starts JetStream, and 
 
 `_setConnectionForTesting(nc, js, jsm)` is the integration test entry point — it wires a real Testcontainers connection into the singletons without touching the Nitro plugin.
 
+### Connection lifecycle hooks
+
+`useNatsHooks()` (in `utils/useNatsHooks.ts`) registers callbacks via module-level arrays `_connectErrorHooks`, `_reconnectHooks`, `_disconnectHooks`. The Nitro plugin's `handleStatus()` and connect-error catch call the corresponding `_fire*()` functions. Hook errors are caught and silently discarded — they must never affect module behavior.
+
+`_clearNatsHooks()` is exposed for tests only — call it in `beforeEach` when testing hook registration.
+
+### Ephemeral consumers
+
+`useEphemeralConsumer()` (in `utils/useEphemeralConsumer.ts`) creates an ordered JetStream consumer via `js.consumers.get(stream, { filter_subjects: [...] })` — note `filter_subjects` (snake_case) is the correct `OrderedConsumerOptions` field, not `filterSubjects`. The public API accepts `filterSubjects` (camelCase) and maps it internally.
+
+The async message loop runs in a detached `async IIFE`. `handle.stop()` sets `stopped = true` and calls `messages.stop()` — the iterator will throw on its next iteration, which is caught and ignored. The `onDisconnect` callback is only fired when `stop()` is called before the consumer finds a matching message (i.e., the timer has not fired and `stopped` was false before the call).
+
 ### Consumer loop
 
 `defineNatsConsumer` (in `utils/consumer.ts`) runs a `while (!stopped)` loop calling `consumer.consume({ max_messages: 1, idle_heartbeat: 5_000 })`. Key behavior:
@@ -71,6 +86,10 @@ The plugin connects to NATS, provisions declared streams, starts JetStream, and 
 - DLQ fires when `msg.info.deliveryCount >= maxDeliver` — publishes via `jsPublish` (durable), then `msg.term()`
 - Backoff: `msg.nak(backoff[Math.min(deliveryCount - 1, backoff.length - 1)])` — last entry reused when exhausted
 - `stopAllConsumers()` must be called before `nc.drain()` on shutdown to prevent ack/connection races
+
+### Stream provisioning
+
+`provisionStreams()` lives in `utils/provisionStreams.ts` (extracted from the plugin for testability). It detects stream-exists errors via `err instanceof JetStreamApiError && err.code === 10058` — **not** `err.api_error.err_code` (the old `@nats-io/jetstream` v2 shape). The `JetStreamApiError.code` getter is the correct v3 API.
 
 ### Typed subjects
 
@@ -85,6 +104,8 @@ declare module 'nuxt-nats' {
 ```
 
 `jsPublish('orders.created', payload)` is then fully typed. Unregistered subjects fall through to the `string` overload.
+
+`jsPublish` accepts `traceId` and `correlationId` in `PublishOpts` — these set `X-Trace-Id` and `X-Correlation-Id` headers and take precedence over the same keys in `headers`. `msgId` still wins over everything for deduplication.
 
 ### KV and Object Store
 
@@ -103,3 +124,5 @@ declare module 'nuxt-nats' {
 - **`@nats-io/nats-core`** is the correct import for `nkeyAuthenticator`, not `@nats-io/nkeys`.
 - **Integration tests run in a single fork** (`singleFork: true`) — Testcontainers container is shared across all integration suites via `beforeAll`/`afterAll` in each file calling `startNats()`/`stopNats()`.
 - Unit test consumer mocks need a `handleRef` pattern (see `test/unit/consumer.test.ts`) to avoid the while-loop spinning after the mock iterator is exhausted.
+- **Console spy cleanup:** always use `afterEach(() => vi.restoreAllMocks())` instead of manual `spy.mockRestore()` — manual calls leak if the test throws before reaching them.
+- **`vi.useFakeTimers()` + `while(!stopped)` loops:** do not call `vi.runAllTimersAsync()` while a consumer loop is active — it enters an infinite cycle. Stop the consumer first, or test only the log side-effect without advancing timers past the retry delay.
