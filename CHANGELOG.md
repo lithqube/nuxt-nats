@@ -6,7 +6,43 @@ Versions are published to npm — pre-releases under the `alpha` dist-tag.
 
 ---
 
-## [0.1.0-alpha.2] — unreleased
+## [0.1.0-alpha.3] — 2026-06-11
+
+### Added
+
+- **Agent Fabric — Synadia Agent Protocol integration.** Expose a Nuxt server as a discoverable AI **agent** on the NATS bus, or **call** other agents from server routes — over the connection the module already manages. Built on `@synadia-ai/agents` + `@synadia-ai/agent-service`. ([guide](docs/guides/agents.md), [evaluation](docs/agent-fabric/EVALUATION.md))
+
+  - **`defineNatsAgent(opts)`** — auto-imported; register and serve a protocol-compliant agent (`prompt` + `status` endpoints, heartbeats, micro-service discovery via `$SRV.PING.agents`). Streams chunks back with `response.send()` and supports mid-stream human-in-the-loop questions via `response.ask()`. Like consumers, it runs **only when `NUXT_NATS_WORKERS=true`** (a logged no-op otherwise) and waits for the connection so it is call-order independent. Supports custom controller endpoints (`spawn`/`stop`/`list`) via `extraEndpoints`.
+  - **`useAgents()`** — caller-side client over the module connection: discover the fleet (`agents.discover()`) and prompt agents. Process-wide cached (one heartbeat subscription); safe in request handlers.
+  - **`getAgentStatuses()`** — snapshot of registered agents (identity + `starting`/`running`/`stopped`/`error`) surfaced in the health endpoint.
+
+- **Health endpoint reports agents** — `/api/_nats/health` now includes an `agents` array (identity + lifecycle status) when any agent is registered.
+
+### Changed
+
+- **Shutdown sequence extended for agents.** `drainAndClose()` now tears down agents and the caller client **before** consumers and `nc.drain()`: `stopAllAgents() → closeAgents() → stopAllConsumers() → nc.drain()`. Each step is error-isolated so a failing teardown can never skip the connection drain or leave the closing flag stuck.
+
+### Fixed
+
+- **Agent registry leak on individual `stop()`** — `handle.stop()` now splices the agent out of the active registry, so `getAgentStatuses()` and the health endpoint no longer report an agent that was stopped individually (`stopAllAgents()` clears the array up front, so that path is unaffected).
+
+### Dependencies
+
+- Added `@synadia-ai/agents` and `@synadia-ai/agent-service` (`^0.5.2`) and `@nats-io/services` (`^3.4.0`) as runtime dependencies. The Synadia SDKs are **0.x and explicitly unstable** — the wrapper is intentionally thin so an API drift is a one-file change; the durable contract is the wire protocol.
+- **Lockfile refresh cleared all 5 npm advisories** (1 critical, 1 high, 3 moderate — `shell-quote`, `devalue`, `__nuxt_island`). All were dev-tooling only (Nuxt/devtools chain) and never shipped in the published package; `package.json` ranges were unchanged. In-range bumps: `@nuxt/kit` `4.4.6` → `4.4.8`, `nuxt` `4.4.5` → `4.4.8`, plus `vitest`, `eslint`, `vue-tsc`, `@types/node`, `@vitest/coverage-v8`, `@nuxt/eslint-config`.
+
+### Tests
+
+- 67 unit tests, 53 integration tests (120 total, up from 106 at alpha.2)
+- New test files: `test/unit/agent.test.ts`, `test/integration/agent.test.ts` (wire-protocol validation against a real NATS broker via Testcontainers)
+
+### Docs
+
+- New [Agent Fabric guide](docs/guides/agents.md) and [evaluation/design rationale](docs/agent-fabric/EVALUATION.md); agent utilities documented in the [API Reference](docs/api.md).
+
+---
+
+## [0.1.0-alpha.2] — 2026-05-29
 
 ### Added
 

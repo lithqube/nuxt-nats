@@ -423,6 +423,83 @@ function stopAllConsumers(): void
 
 ---
 
+## defineNatsAgent(opts)
+
+Register and serve a [Synadia Agent Protocol](./guides/agents.md) agent over the module's NATS connection — discoverable via `$SRV.PING.agents` and promptable by any protocol-compliant caller. Runs **only when `NUXT_NATS_WORKERS=true`** (a logged no-op otherwise), and waits for the connection internally so it is safe to call from any server plugin regardless of plugin order. Stopped automatically on shutdown.
+
+```ts
+function defineNatsAgent(opts: NatsAgentOptions): NatsAgentHandle
+```
+
+**`NatsAgentOptions`:**
+
+| Option | Type | Default | Notes |
+|---|---|---|---|
+| `agent` | `string` | — | `metadata.agent` — lowercase `a-z0-9-_`, identity tuple. |
+| `owner` | `string` | — | `metadata.owner` — tenant / account namespace. |
+| `name` | `string` | — | Instance name (5th subject token, e.g. a session or node id). |
+| `onPrompt` | `PromptHandler` | — | `(envelope, response) => …`. Stream chunks with `response.send()`; ask the caller mid-stream with `response.ask(prompt, { timeoutMs })`. The SDK emits the leading `ack` and zero-byte terminator. |
+| `subjectToken` | `string` | `agent` | Override the subject's 3rd token (e.g. `cc` for `claude-code`). |
+| `description` | `string` | — | Service description surfaced by `nats micro info`. |
+| `version` | `string` | — | Harness semver advertised as `service.version`. |
+| `heartbeatIntervalS` | `number` | `30` | Heartbeat cadence in seconds. |
+| `attachmentsOk` | `boolean` | `true` | Whether the prompt endpoint accepts attachments. |
+| `maxPayload` | `string` | broker-negotiated | Omit to advertise `nc.info.max_payload`; an over-large override is clamped to the server limit. |
+| `extraMetadata` | `Record<string, string>` | — | Extra metadata merged into the service metadata. |
+| `extraEndpoints` | `AgentServiceExtraEndpoint[]` | — | Custom controller endpoints (`spawn`/`stop`/`list`); subjects advertised verbatim. |
+
+**`NatsAgentHandle`:**
+
+```ts
+interface NatsAgentHandle {
+  stop: () => Promise<void>                                          // idempotent; deregisters and drops from the registry
+  status: () => 'starting' | 'running' | 'stopped' | 'error'
+  identity: { agent: string, owner: string, name: string }
+}
+```
+
+See the [Agent Fabric guide](./guides/agents.md) for streaming, human-in-the-loop, and controller patterns.
+
+---
+
+## useAgents()
+
+Caller-side client for the Synadia Agent Protocol — discover and prompt agents on the bus over the module's connection. Returns a process-wide cached [`Agents`](https://github.com/synadia-ai/synadia-agent-sdk-docs) client (one heartbeat subscription is reused). Throws if the connection is not yet established. Closed automatically on shutdown.
+
+```ts
+function useAgents(): Agents
+```
+
+```ts
+const agents = useAgents()
+const found = await agents.discover()
+for await (const msg of await found[0]!.prompt('summarize the incident')) {
+  if (msg.type === 'response') process.stdout.write(msg.text)
+}
+```
+
+---
+
+## getAgentStatuses()
+
+Snapshot of agents registered in the current process — used by the health endpoint.
+
+```ts
+function getAgentStatuses(): Array<{ agent: string, owner: string, name: string, status: string }>
+```
+
+---
+
+## stopAllAgents()
+
+Stop all registered agents (heartbeats + endpoints). Called automatically during graceful shutdown, before `stopAllConsumers()` and `nc.drain()`.
+
+```ts
+function stopAllAgents(): Promise<void>
+```
+
+---
+
 ## NatsEvents (interface)
 
 Empty interface exported from `nuxt-nats`. Augment it in your application to enable typed subjects on `jsPublish`.
@@ -460,9 +537,14 @@ GET /api/_nats/health   (path configurable via nats.health.endpoint)
     "consumers": 7,
     "memory": 0,
     "storage": 204800
-  }
+  },
+  "agents": [
+    { "agent": "nuxt-assistant", "owner": "acme", "name": "web-1", "status": "running" }
+  ]
 }
 ```
+
+The `agents` array is present only when one or more agents are registered in the process (see [`defineNatsAgent`](#definenatsagentopts)).
 
 **Response — disconnected:**
 
