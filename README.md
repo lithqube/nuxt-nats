@@ -17,6 +17,7 @@ NATS JetStream integration for Nuxt. Server-side publish, typed consumers, KV an
 - **Connection lifecycle hooks** via `useNatsHooks()` — attach `onConnectError`, `onReconnect`, and `onDisconnect` callbacks for alerting and metrics
 - **KV buckets** via `useKV(bucket)` — cached per process
 - **Object Store** via `useObj(bucket)` — stream large blobs through Nitro handlers
+- **Agent Fabric** via `defineNatsAgent()` / `useAgents()` — expose the server as a discoverable AI agent on the NATS bus or call other agents, on the [Synadia Agent Protocol](docs/guides/agents.md) (streaming, mid-stream human-in-the-loop, heartbeats)
 - **Stream auto-provisioning** on startup (opt-in per stream, with `'update'` mode for config reconciliation)
 - **Health endpoint** at `/api/_nats/health` — connection status, RTT, JetStream account stats
 - **Typed subjects** — augment `NatsEvents` to get end-to-end type safety on `jsPublish`
@@ -193,6 +194,41 @@ NUXT_NATS_WORKERS=true node .output/server/index.mjs
 ```
 
 > **Tip:** For production, run the Nuxt server (publisher) and a separate worker process (consumers) as distinct deployments. Workers need a persistent Node.js or Bun runtime — not serverless.
+
+### Agent Fabric (Synadia Agent Protocol)
+
+Expose the server as a discoverable AI agent, or call other agents on the bus. Like consumers, `defineNatsAgent` runs only when `NUXT_NATS_WORKERS=true`.
+
+```ts
+// server/plugins/assistant.ts — host an agent
+export default defineNitroPlugin(() => {
+  defineNatsAgent({
+    agent: 'nuxt-assistant', owner: 'acme', name: 'web-1',
+    async onPrompt(envelope, response) {
+      for await (const token of llm.stream(envelope.prompt)) {
+        await response.send(token)   // stream chunks back
+      }
+    },
+  })
+})
+```
+
+```ts
+// server/api/ask.post.ts — call an agent
+export default defineEventHandler(async (event) => {
+  const { prompt } = await readBody(event)
+  const [agent] = await useAgents().discover()
+  if (!agent) return { error: 'no agents on the fabric' }
+
+  let text = ''
+  for await (const msg of await agent.prompt(prompt)) {
+    if (msg.type === 'response') text += msg.text
+  }
+  return { response: text }
+})
+```
+
+See the [Agent Fabric guide](docs/guides/agents.md) for mid-stream human-in-the-loop, controller endpoints, and lifecycle details.
 
 ### Typed subjects
 

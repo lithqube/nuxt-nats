@@ -13,6 +13,7 @@ NATS JetStream integration for Nuxt 4. Server-side publish, typed consumers, KV 
 | [Consumers](./guides/consumers.md) | Durable pull consumers, ack patterns, DLQ, scaling |
 | [KV Store](./guides/kv.md) | Key-value storage, watch, typed helpers |
 | [Object Store](./guides/object-store.md) | Blob storage, streaming upload/download |
+| [Agent Fabric](./guides/agents.md) | Host or call AI agents on the Synadia Agent Protocol over NATS |
 | [Typed Events](./guides/typed-events.md) | NatsEvents augmentation, end-to-end type safety |
 | [Deployment](./guides/deployment.md) | Node, Docker, Kubernetes, Vercel, Cloudflare Workers, Bun |
 
