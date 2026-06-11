@@ -1,5 +1,6 @@
 import { defineEventHandler } from 'h3'
 import { getNatsConnection, getJetStreamManager } from '../plugins/_connection'
+import { getAgentStatuses } from '../utils/defineNatsAgent'
 
 export default defineEventHandler(async () => {
   const nc = getNatsConnection()
@@ -42,6 +43,12 @@ export default defineEventHandler(async () => {
   }
   else {
     result.jetstream = { available: false }
+  }
+
+  // Agent fabric (Synadia Agent Protocol) — registered hosts, if any
+  const agents = getAgentStatuses()
+  if (agents.length) {
+    result.agents = agents
   }
 
   return result
