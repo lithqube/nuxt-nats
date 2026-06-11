@@ -73,8 +73,11 @@
     "@nats-io/kv": "^3.4.0",
     "@nats-io/nats-core": "^3.4.0",
     "@nats-io/obj": "^3.4.0",
+    "@nats-io/services": "^3.4.0",
     "@nats-io/transport-node": "^3.4.0",
     "@nuxt/kit": "^4.4.6",
+    "@synadia-ai/agent-service": "^0.5.2",
+    "@synadia-ai/agents": "^0.5.2",
     "defu": "^6.1.4"
   },
   "devDependencies": {

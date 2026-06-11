@@ -141,6 +141,9 @@ export default defineNuxtModule<ModuleOptions>({
         '@nats-io/kv',
         '@nats-io/obj',
         '@nats-io/nkeys',
+        '@nats-io/services',
+        '@synadia-ai/agents',
+        '@synadia-ai/agent-service',
       ]
       for (const pkg of natsPackages) {
         if (!nitroConfig.externals.external!.includes(pkg)) {
