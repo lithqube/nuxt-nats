@@ -61,22 +61,32 @@ async function drainAndClose() {
   const nc = getNatsConnection()
   if (_isClosing || !nc) return
   _isClosing = true
-  // Stop agents first: tear down heartbeats + in-flight prompt streams and the
-  // caller client before the connection drains (mirrors the consumer ordering).
-  await stopAllAgents()
-  await closeAgents()
-  // Stop consumer loops next so no new acks are sent during drain
-  stopAllConsumers()
   try {
-    await nc.drain()
+    // Stop agents first: tear down heartbeats + in-flight prompt streams and
+    // the caller client before the connection drains (mirrors the consumer
+    // ordering). Guard so a throw can't skip drain/cleanup below.
+    try {
+      await stopAllAgents()
+      await closeAgents()
+    }
+    catch (err) {
+      console.error('[nuxt-nats] Error stopping agents during shutdown:', err)
+    }
+    // Stop consumer loops next so no new acks are sent during drain
+    stopAllConsumers()
+    try {
+      await nc.drain()
+    }
+    catch {
+      // drain may throw if connection already closed
+    }
   }
-  catch {
-    // drain may throw if connection already closed
+  finally {
+    setNatsConnection(undefined)
+    setJetStream(undefined)
+    setJetStreamManager(undefined)
+    _isClosing = false
   }
-  setNatsConnection(undefined)
-  setJetStream(undefined)
-  setJetStreamManager(undefined)
-  _isClosing = false
 }
 
 interface NatsRuntimeConfig {

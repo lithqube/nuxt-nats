@@ -45,7 +45,7 @@ Merge strategies, pick per use case:
 - **First-wins / race** — take the fastest complete reply, cancel the rest (latency-sensitive).
 - **Quorum** — wait for K of N, useful when agents may be slow or offline.
 
-Because prompts load-balance across instances of the same agent via the `agents` queue group, "fan out to every *kind* of agent" and "fan out to every *instance*" are different intents — the first prompts one instance per agent identity; the second requires addressing instances individually via `$SRV.INFO.agents.{instance_id}`.
+Because prompts load-balance across instances of the same agent via the `agents` queue group, "fan out to every *kind* of agent" and "fan out to every *instance*" are different intents — the first prompts one instance per agent identity; the second requires addressing each instance individually. Enumerate the instances first via `$SRV.PING.agents` / `$SRV.INFO.agents` (one response per instance, each carrying its own `instance_id`), then direct-lookup a specific one with `$SRV.INFO.agents.<instance_id>` — substituting the real id, e.g. `$SRV.INFO.agents.VMKS6MHK71PCPWGY38A7N5`.
 
 ## 3. Track liveness without polling
 
@@ -112,7 +112,7 @@ await service.start(); // throws on a name colliding with prompt/status or anoth
 
 ## Robustness checklist
 
-- **Tolerate offline agents** — discovery is a snapshot; an agent may die mid-fan-out. Treat a missing terminator past a timeout as a failed branch, not a hang. The Python caller surfaces this as `StreamStalledError` / `StreamMaxWaitExceededError` via `prompt(max_wait_s=…)`; the TS caller takes `inactivityTimeoutMs` / an abort `signal` on `prompt()`.
+- **Tolerate offline agents** — discovery is a snapshot; an agent may die mid-fan-out. Treat a missing terminator past a timeout as a failed branch, not a hang. The Python caller raises `StreamStalledError` for a per-chunk **inactivity gap** (the §6.6 timer, `timeout=`, that resets on every chunk) and `StreamMaxWaitExceededError` when the **absolute ceiling** `prompt(max_wait_s=…)` fires (default 600 s) — both subclass `ProtocolError`. The TS caller takes `inactivityTimeoutMs` / an abort `signal` on `prompt()`.
 - **Validate before sending** — the caller SDK raises `PayloadTooLargeError` / `AttachmentsNotSupportedError` *before* the wire when an envelope violates the agent's (or your broker's) limits. Catch them from `@synadia-ai/agents/errors` instead of round-tripping a `400`.
 - **Survive broker blips** — wrap connect options in `withAgentReconnectDefaults` so a long-lived orchestrator retries indefinitely instead of giving up after ~20 s; still handle the terminal `close` status event.
 - **Respect capabilities** — check `max_payload` / `attachments_ok` from discovery metadata before sending large or attachment-bearing prompts; oversize sends earn a `400`. Don't assume `1MB` — agents advertise the broker-negotiated cap (often `8MB` on NGS).

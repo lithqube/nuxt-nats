@@ -16,9 +16,20 @@ export default defineEventHandler(async (event) => {
 
   const target = found[0]!
   let text = ''
-  for await (const msg of await target.prompt(promptText)) {
-    if (msg.type === 'response') text += msg.text
-    // ignore status/query/unknown chunk types for this simple demo
+  try {
+    for await (const msg of await target.prompt(promptText)) {
+      if (msg.type === 'response') text += msg.text
+      // ignore status/query/unknown chunk types for this simple demo
+    }
+  }
+  catch (err) {
+    // The stream can fail mid-flight (agent error, timeout, disconnect).
+    return {
+      ok: false,
+      agent: `${target.agent}/${target.owner}/${target.name}`,
+      error: err instanceof Error ? err.message : String(err),
+      partial: text,
+    }
   }
 
   return {

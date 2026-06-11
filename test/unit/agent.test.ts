@@ -117,7 +117,7 @@ describe('defineNatsAgent', () => {
     expect('extraEndpoints' in opts).toBe(false)
   })
 
-  it('stop() tears down the service and stopAllAgents clears the registry', async () => {
+  it('stop() tears down the service and removes itself from the registry', async () => {
     process.env.NUXT_NATS_WORKERS = 'true'
     h.conn = fakeNc
     const handle = defineNatsAgent({ agent: 'echo', owner: 'demo', name: 'main', onPrompt: vi.fn() })
@@ -127,6 +127,17 @@ describe('defineNatsAgent', () => {
     await handle.stop()
     expect(stopSpy).toHaveBeenCalledOnce()
     expect(handle.status()).toBe('stopped')
+    // Individual stop() deregisters so health no longer reports the stopped agent.
+    expect(getAgentStatuses()).toHaveLength(0)
+  })
+
+  it('stopAllAgents clears the registry even with multiple agents', async () => {
+    process.env.NUXT_NATS_WORKERS = 'true'
+    h.conn = fakeNc
+    defineNatsAgent({ agent: 'echo', owner: 'demo', name: 'a', onPrompt: vi.fn() })
+    defineNatsAgent({ agent: 'echo', owner: 'demo', name: 'b', onPrompt: vi.fn() })
+    await flush()
+    expect(getAgentStatuses()).toHaveLength(2)
 
     await stopAllAgents()
     expect(getAgentStatuses()).toHaveLength(0)

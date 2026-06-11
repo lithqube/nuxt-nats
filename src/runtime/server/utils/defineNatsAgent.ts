@@ -107,6 +107,11 @@ export function defineNatsAgent(opts: NatsAgentOptions): NatsAgentHandle {
         console.error(`[nuxt-nats] Error stopping agent "${opts.agent}/${opts.owner}/${opts.name}":`, err)
       }
       handle._service = undefined
+      // Drop from the registry so getAgentStatuses() / health no longer report
+      // a stopped agent. (No-op when called via stopAllAgents, which already
+      // cleared the array.)
+      const i = _activeAgents.indexOf(handle)
+      if (i !== -1) _activeAgents.splice(i, 1)
     },
   }
   _activeAgents.push(handle)

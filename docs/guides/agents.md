@@ -104,7 +104,7 @@ export default defineEventHandler(async (event) => {
 
 Agents and the caller client are torn down in `drainAndClose()` **before** consumers and `nc.drain()`:
 
-```
+```text
 stopAllAgents() → closeAgents() → stopAllConsumers() → nc.drain()
 ```
 
