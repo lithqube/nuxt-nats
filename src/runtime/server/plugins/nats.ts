@@ -1,12 +1,14 @@
 import { defineNitroPlugin, useRuntimeConfig } from 'nitropack/runtime'
 import { connect, wsconnect } from '@nats-io/transport-node'
-import { nkeyAuthenticator, type NatsConnection, type Status } from '@nats-io/nats-core'
+import type { NatsConnection, Status } from '@nats-io/nats-core'
 import { jetstream, jetstreamManager } from '@nats-io/jetstream'
 import { stopAllConsumers } from '../utils/consumer'
 import { stopAllAgents } from '../utils/defineNatsAgent'
 import { closeAgents } from '../utils/useAgents'
 import { provisionStreams } from '../utils/provisionStreams'
 import type { StreamDefinition } from '../utils/provisionStreams'
+import { buildAuthOptions } from '../utils/buildConnectionOptions'
+import { validateJwt } from '../utils/validateJwt'
 import { _fireConnectError, _fireReconnect, _fireDisconnect } from '../utils/useNatsHooks'
 import {
   getNatsConnection,
@@ -28,16 +30,7 @@ async function buildConnection(cfg: NatsRuntimeConfig): Promise<NatsConnection> 
     maxReconnectAttempts: cfg.maxReconnectAttempts ?? -1,
   }
 
-  if (cfg.nkeySeed) {
-    opts.authenticator = nkeyAuthenticator(new TextEncoder().encode(cfg.nkeySeed))
-  }
-  else if (cfg.token) {
-    opts.token = cfg.token
-  }
-  else if (cfg.user) {
-    opts.user = cfg.user
-    opts.pass = cfg.pass
-  }
+  Object.assign(opts, buildAuthOptions(cfg))
 
   if (cfg.tls && Object.keys(cfg.tls).length) {
     opts.tls = {
@@ -97,6 +90,7 @@ interface NatsRuntimeConfig {
   user: string
   pass: string
   nkeySeed: string
+  userJwt: string
   maxReconnectAttempts: number
   jsDomain: string
   jsApiPrefix: string
@@ -108,6 +102,8 @@ interface NatsRuntimeConfig {
 
 export default defineNitroPlugin(async (nitroApp) => {
   const config = useRuntimeConfig().nats as NatsRuntimeConfig
+
+  validateJwt(config.userJwt)
 
   let nc: NatsConnection
   try {
@@ -172,6 +168,13 @@ function handleStatus(s: Status) {
     _fireReconnect(server)
   }
   else if (s.type === 'error') {
-    console.error('[nuxt-nats] NATS error:', (s as { error?: Error }).error)
+    const err = (s as { error?: Error }).error
+    const msg = String(err?.message ?? err ?? '')
+    if (msg.includes('Authorization') || msg.includes('Permissions Violation')) {
+      console.error('[nuxt-nats] AUTH ERROR — JWT may be expired or missing permissions:', err)
+    }
+    else {
+      console.error('[nuxt-nats] NATS error:', err)
+    }
   }
 }

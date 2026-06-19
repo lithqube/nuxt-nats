@@ -307,7 +307,31 @@ All `runtimeConfig.nats.*` values can be overridden at runtime. Prefix with `NUX
 | `NUXT_NATS_TOKEN` | Auth token |
 | `NUXT_NATS_USER` | Username |
 | `NUXT_NATS_PASS` | Password |
+| `NUXT_NATS_NKEY_SEED` | NKey seed (Ed25519 private key) |
+| `NUXT_NATS_USER_JWT` | User JWT (signed when `NUXT_NATS_NKEY_SEED` is also set, unsigned otherwise) |
 | `NUXT_NATS_WORKERS` | Set to `true` to start registered consumers |
+
+### Authentication
+
+The module selects an auth method based on which credentials are set, in this order:
+
+1. **JWT + NKey (production)** — when both `userJwt` and `nkeySeed` are set, the module uses `jwtAuthenticator(jwt, seed)` from `@nats-io/nats-core`. This is the standard for NATS servers configured with the JWT resolver (`nsc` operator/account/user hierarchy). The JWT is sent during `CONNECT`; the NKey seed is used to sign the server's nonce to prove possession of the private key.
+2. **JWT (unsigned)** — when `userJwt` is set without `nkeySeed`, uses `jwtAuthenticator(jwt)`. The JWT is sent unsigned — usable only against servers explicitly configured to accept unsigned JWTs, such as when identity is pinned out-of-band by operator policy or in test environments.
+3. **NKey only (dev)** — when only `nkeySeed` is set, uses `nkeyAuthenticator(seed)`. For static NKey-based servers without a JWT resolver.
+4. **Token** — when only `token` is set.
+5. **User / pass** — when only `user` (and optionally `pass`) is set.
+6. **Anonymous** — when none of the above are set.
+
+#### JWT Auth (production)
+
+Generate a user JWT and NKey seed with [`nsc`](https://github.com/nats-io/nsc) (`nsc generate creds`) and pass them via env vars — never commit them to source:
+
+```bash
+NUXT_NATS_USER_JWT='eyJ0eXAiOiJqd3Q...'  # full user JWT
+NUXT_NATS_NKEY_SEED='SUACSP3ZI...'       # matching user NKey seed (omit for unsigned JWT)
+```
+
+On startup the module checks the JWT's `exp` claim and logs a warning if it expires within 24 hours, or an error if it is already expired. Auth errors from the server (expired, revoked, missing permissions) are logged with an `AUTH ERROR` prefix so they are distinguishable from network errors. See the [NATS JWT guide](https://docs.nats.io/running-a-nats-service/nats_admin/security/jwt) for chain-of-trust details.
 
 ## Health endpoint
 
