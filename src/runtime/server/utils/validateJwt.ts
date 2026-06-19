@@ -2,13 +2,12 @@ export function validateJwt(jwt: string): void {
   if (!jwt) return
 
   const parts = jwt.split('.')
-  if (parts.length !== 3) {
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
     console.error('[nuxt-nats] NUXT_NATS_USER_JWT is malformed — expected 3 parts (header.payload.signature)')
     return
   }
 
   const payloadPart = parts[1]
-  if (!payloadPart) return
 
   let payload: { exp?: number }
   try {

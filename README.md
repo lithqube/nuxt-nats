@@ -316,7 +316,7 @@ All `runtimeConfig.nats.*` values can be overridden at runtime. Prefix with `NUX
 The module selects an auth method based on which credentials are set, in this order:
 
 1. **JWT + NKey (production)** — when both `userJwt` and `nkeySeed` are set, the module uses `jwtAuthenticator(jwt, seed)` from `@nats-io/nats-core`. This is the standard for NATS servers configured with the JWT resolver (`nsc` operator/account/user hierarchy). The JWT is sent during `CONNECT`; the NKey seed is used to sign the server's nonce to prove possession of the private key.
-2. **JWT only** — when only `userJwt` is set, uses `jwtAuthenticator(jwt)`. The JWT is sent unsigned — only usable against servers configured to accept it (rare; mostly useful for testing or when the operator pins identity out-of-band).
+2. **JWT (unsigned)** — when `userJwt` is set without `nkeySeed`, uses `jwtAuthenticator(jwt)`. The JWT is sent unsigned — usable only against servers explicitly configured to accept unsigned JWTs, such as when identity is pinned out-of-band by operator policy or in test environments.
 3. **NKey only (dev)** — when only `nkeySeed` is set, uses `nkeyAuthenticator(seed)`. For static NKey-based servers without a JWT resolver.
 4. **Token** — when only `token` is set.
 5. **User / pass** — when only `user` (and optionally `pass`) is set.

@@ -29,7 +29,7 @@ function makeMockNuxt(): MockNuxt {
 }
 
 afterEach(() => {
-  vi.clearAllMocks()
+  vi.restoreAllMocks()
 })
 
 describe('module setup — userJwt default in runtimeConfig', () => {

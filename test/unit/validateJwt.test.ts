@@ -48,6 +48,17 @@ describe('validateJwt — malformed structure', () => {
     expect(errSpy).toHaveBeenCalledTimes(1)
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('malformed'))
   })
+
+  it('logs error containing "malformed" when payload part is empty (header..signature)', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    validateJwt('header..signature')
+
+    expect(errSpy).toHaveBeenCalledTimes(1)
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('malformed'))
+    expect(warnSpy).not.toHaveBeenCalled()
+  })
 })
 
 describe('validateJwt — exp claim checks', () => {
