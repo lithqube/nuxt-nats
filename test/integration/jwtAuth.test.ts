@@ -31,7 +31,9 @@ beforeAll(async () => {
     name: 'U',
     pub: { allow: ['jwt.>', '_INBOX.>', '$JS.API.>'], deny: [] },
     sub: { allow: ['jwt.>', '_INBOX.>', '$JS.API.>'], deny: [] },
-  })
+    limits: { conn: -1, subs: -1, data: -1, payload: -1, imports: -1, exports: -1, wildcards: true, leaf: -1 },
+    jetstream: { max_mem: -1, max_store: -1, max_streams: -1, max_consumers: -1 },
+  } as any)
 
   const oJwt = await encodeOperator('TEST', okp, {
     name: 'TEST',
