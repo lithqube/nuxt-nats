@@ -52,6 +52,8 @@ export interface ModuleOptions {
   pass?: string
   /** Path to NKey seed file. Requires @nats-io/nkeys. */
   nkeySeed?: string
+  /** User JWT for auth against a JWT-resolver NATS server. Use alone for unsigned JWTs, or with nkeySeed for signed JWTs. */
+  userJwt?: string
   /** TLS configuration. Set caFile for server TLS; add certFile + keyFile for mTLS. */
   tls?: {
     caFile?: string
@@ -105,6 +107,7 @@ export default defineNuxtModule<ModuleOptions>({
       user: options.user ?? '',
       pass: options.pass ?? '',
       nkeySeed: options.nkeySeed ?? '',
+      userJwt: options.userJwt ?? '',
       tls: options.tls ?? null,
       maxReconnectAttempts: options.maxReconnectAttempts,
       jsDomain: options.jsDomain ?? '',
