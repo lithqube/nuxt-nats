@@ -45,7 +45,7 @@ Versions are published to npm — pre-releases under the `alpha` dist-tag.
 
 - 94 unit tests (up from 67 at alpha.3)
 - New unit test files: `buildConnectionOptions.test.ts` (auth priority chain, all 31 credential combinations), `validateJwt.test.ts` (empty / malformed / expired / expiring-soon / no-`exp` / decode-failure cases), `moduleDefaults.test.ts` (runtimeConfig defaulting of `userJwt` and `nkeySeed`).
-- New integration test file: `jwtAuth.test.ts` — spins up a `nats:2.10-alpine` container with a preloaded JWT resolver, generates operator/account/user credentials with `@nats-io/jwt`, and exercises successful connect, JetStream round-trip, mismatched-seed rejection, and malformed-JWT rejection. **Note:** the JetStream round-trip on the user account is currently failing on the CI runner with `JetStreamNotEnabled`; tracked separately, not a release blocker.
+- New integration test file: `jwtAuth.test.ts` — spins up a `nats:2.10-alpine` container with a preloaded JWT resolver, generates operator/account/user credentials with `@nats-io/jwt`, and exercises successful connect, JetStream round-trip, mismatched-seed rejection, and malformed-JWT rejection.
 
 ### Docs
 
