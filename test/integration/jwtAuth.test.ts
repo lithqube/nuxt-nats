@@ -31,7 +31,10 @@ beforeAll(async () => {
   const aJwt = await encodeAccount('A', akp, {
     name: 'A',
     limits: { conn: -1, subs: -1, data: -1, payload: -1, imports: -1, exports: -1, wildcards: true, leaf: -1 },
-    jetstream: { max_mem: -1, max_store: -1, max_streams: -1, max_consumers: -1 },
+    mem_storage: -1,
+    disk_storage: -1,
+    streams: -1,
+    consumer: -1,
   } as any, { signer: okp })
 
   const uJwt = await encodeUser('U', ukp, akp, {
