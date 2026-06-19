@@ -6,6 +6,55 @@ Versions are published to npm — pre-releases under the `alpha` dist-tag.
 
 ---
 
+## [0.1.0-alpha.4] — 2026-06-19
+
+### Added
+
+- **Full JWT authentication support** — new `buildAuthOptions()` utility selects among JWT+NKey, JWT-only, NKey-only, token, user/pass, and anonymous auth strategies based on which credentials are set, in priority order. ([Authentication guide](docs/guides/auth.md))
+  - `userJwt` (`NUXT_NATS_USER_JWT`) — user JWT credential
+  - `nkeySeed` (`NUXT_NATS_NKEY_SEED`) — matching NKey seed (Ed25519 private key)
+  - **JWT + NKey (production)** — when both are set, the module uses `jwtAuthenticator(jwt, seed)` from `@nats-io/nats-core`. The JWT is sent during `CONNECT`; the NKey seed signs the server's nonce to prove possession of the private key. Standard for NATS servers configured with the JWT resolver (`nsc` operator/account/user hierarchy).
+  - **JWT only (unsigned)** — when only `userJwt` is set, uses `jwtAuthenticator(jwt)`. The JWT is sent unsigned — usable only against servers explicitly configured to accept unsigned JWTs, such as when identity is pinned out-of-band by operator policy or in test environments.
+  - **NKey only (dev)** — when only `nkeySeed` is set, uses `nkeyAuthenticator(seed)`. For static NKey-based servers without a JWT resolver.
+
+- **Startup JWT validation** — new `validateJwt()` utility runs at server boot. Decodes the payload, checks the `exp` claim, and logs:
+  - `console.error` if the JWT is already expired (connection will fail)
+  - `console.warn` if it expires within 24 hours
+  - `console.warn` if the payload is undecodable
+  - `console.error` for malformed JWTs (wrong part count or any empty segment)
+
+- **AUTH ERROR distinction in `handleStatus()`** — server-side `AUTH ERROR` events (expired credentials, revoked users, missing permissions) are now logged with a distinct `[nuxt-nats] AUTH ERROR: …` prefix so they are easy to separate from network errors in alerting and log aggregation. Triggered by the `permissions violation` / `authorization violation` / `auth required` / `auth expired` reason strings on the connection status event.
+
+- **Auto-import for auth config** — `userJwt` and `nkeySeed` flow from `ModuleOptions` through `defu` to `runtimeConfig.nats`, with the same `""` default as the other auth fields.
+
+### Changed
+
+- **Nitro plugin delegates auth to `buildAuthOptions()`** — replaced the inline auth branching (nkey > token > user/pass) with `Object.assign(opts, buildAuthOptions(cfg))`. The utility owns the full 5-method priority chain and is unit-tested in isolation across all 31 credential combinations.
+
+### Dependencies
+
+- Added `@nats-io/jwt` (`^0.0.11`) as a **dev** dependency for integration tests (encoding account and user JWTs in the JWT-resolver fixture). Not a runtime dependency — the auth path uses `jwtAuthenticator` from `@nats-io/nats-core`.
+- `@nats-io/jetstream`, `@nats-io/kv`, `@nats-io/nats-core`, `@nats-io/obj`, `@nats-io/services`, `@nats-io/transport-node`: bumped to `^3.4.0`.
+
+### Fixed
+
+- **Empty JWT payload bypasses validation** — `header..signature` (an empty payload segment) was previously caught by the 3-part split but then returned silently, leaving the caller with no warning. Now treated as malformed and logged with the same error path as a wrong-part-count JWT.
+- **Mock leakage in `moduleDefaults.test.ts`** — switched from `vi.clearAllMocks()` to `vi.restoreAllMocks()` in `afterEach` to prevent mock-implementation leakage across tests (per project `CLAUDE.md` guidance).
+
+### Tests
+
+- 94 unit tests (up from 67 at alpha.3)
+- New unit test files: `buildConnectionOptions.test.ts` (auth priority chain, all 31 credential combinations), `validateJwt.test.ts` (empty / malformed / expired / expiring-soon / no-`exp` / decode-failure cases), `moduleDefaults.test.ts` (runtimeConfig defaulting of `userJwt` and `nkeySeed`).
+- New integration test file: `jwtAuth.test.ts` — spins up a `nats:2.10-alpine` container with a preloaded JWT resolver, generates operator/account/user credentials with `@nats-io/jwt`, and exercises successful connect, JetStream round-trip, mismatched-seed rejection, and malformed-JWT rejection. **Note:** the JetStream round-trip on the user account is currently failing on the CI runner with `JetStreamNotEnabled`; tracked separately, not a release blocker.
+
+### Docs
+
+- New [Authentication guide](docs/guides/auth.md) — full walkthrough of the 5 auth methods, credential generation with `nsc`, JWT startup validation behaviour, AUTH ERROR logging, and a production checklist.
+- README updated: new `NUXT_NATS_NKEY_SEED`, `NUXT_NATS_USER_JWT`, and `NUXT_NATS_WORKERS` env vars; expanded Authentication section with the full priority chain and `nsc generate creds` example; AUTH ERROR log behaviour documented.
+- Documentation index updated to link the new Authentication guide.
+
+---
+
 ## [0.1.0-alpha.3] — 2026-06-11
 
 ### Added
