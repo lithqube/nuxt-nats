@@ -25,28 +25,29 @@ beforeAll(async () => {
   const sJwt = await encodeAccount('SYS', skp, {
     name: 'SYS',
     limits: { conn: -1, subs: -1, data: -1, payload: -1, imports: -1, exports: -1, wildcards: true, leaf: -1 },
-    jetstream: { max_mem: 0, max_store: 0, max_streams: -1, max_consumers: -1 },
-  } as any, { signer: okp })
+  }, { signer: okp })
 
   const aJwt = await encodeAccount('A', akp, {
     name: 'A',
-    limits: { conn: -1, subs: -1, data: -1, payload: -1, imports: -1, exports: -1, wildcards: true, leaf: -1 },
-    mem_storage: -1,
-    disk_storage: -1,
-    streams: -1,
-    consumer: -1,
-  } as any, { signer: okp })
+    limits: {
+      conn: -1, subs: -1, data: -1, payload: -1, imports: -1, exports: -1, wildcards: true, leaf: -1,
+      mem_storage: -1,
+      disk_storage: -1,
+      streams: -1,
+      consumer: -1,
+    },
+  }, { signer: okp })
 
   const uJwt = await encodeUser('U', ukp, akp, {
     name: 'U',
     pub: { allow: ['jwt.>', '_INBOX.>', '$JS.API.>'], deny: [] },
     sub: { allow: ['jwt.>', '_INBOX.>', '$JS.API.>'], deny: [] },
-  } as any)
+  })
 
   const oJwt = await encodeOperator('TEST', okp, {
     name: 'TEST',
     system_account: skp.getPublicKey(),
-  } as any)
+  })
 
   const conf = `operator: "${oJwt}"
 listen: 4222

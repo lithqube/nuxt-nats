@@ -9,6 +9,7 @@ NATS JetStream integration for Nuxt 4. Server-side publish, typed consumers, KV 
 | Guide | Description |
 |---|---|
 | [Getting Started](./guides/getting-started.md) | Install, minimal setup, first publish, health check |
+| [Authentication](./guides/auth.md) | JWT/NKey, token, user/pass, anonymous; priority order, `nsc` workflow, startup validation |
 | [Streams](./guides/streams.md) | Configure retention, storage, provisioning, deduplication |
 | [Consumers](./guides/consumers.md) | Durable pull consumers, ack patterns, DLQ, scaling |
 | [KV Store](./guides/kv.md) | Key-value storage, watch, typed helpers |
