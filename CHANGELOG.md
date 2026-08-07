@@ -33,9 +33,9 @@ The following patterns have been validated in production and are recommended:
 
 - **Stream retention limits** — always set `maxAge` and/or `maxBytes` on production streams to prevent unbounded disk growth.
 - **Explicit `duplicateWindow`** — set to match your retry window (e.g. `'5m'`) rather than relying on the NATS server default (2 minutes).
-- **`provision: 'never'` for production** — use `'startup'` or `'update'` only in development. In production with rolling deploys, multiple instances calling `jsm.streams.update()` simultaneously can race. Provision streams via CLI or IaC instead.
+- **`provision: 'never'` for production** — `'startup'` is safe (warns and skips on config drift) but `'update'` can race when multiple instances call `jsm.streams.update()` simultaneously during rolling deploys. Prefer `'never'` in production and provision streams via CLI or IaC.
 - **Lifecycle hooks for alerting** — register `useNatsHooks({ onDisconnect, onReconnect })` in a server plugin to surface connection drops in your monitoring. The module logs these internally, but hooks let you integrate with your alerting stack.
-- **`NUXT_NATS_SERVERS` multi-server** — pass all cluster nodes as a comma-separated string (e.g. `nats://a:4222,nats://b:4222,nats://c:4222`). The NATS client splits and handles failover automatically.
+- **`NUXT_NATS_SERVERS` multi-server** — pass all cluster nodes as a comma-separated string (e.g. `nats://a:4222,nats://b:4222,nats://c:4222`). The module splits the value into an array before passing to the NATS client, which handles failover automatically.
 
 ---
 

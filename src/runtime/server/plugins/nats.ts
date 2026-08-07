@@ -8,6 +8,7 @@ import { closeAgents } from '../utils/useAgents'
 import { provisionStreams } from '../utils/provisionStreams'
 import type { StreamDefinition } from '../utils/provisionStreams'
 import { buildAuthOptions } from '../utils/buildConnectionOptions'
+import { normalizeServers } from '../utils/normalizeServers'
 import { validateJwt } from '../utils/validateJwt'
 import { _fireConnectError, _fireReconnect, _fireDisconnect } from '../utils/useNatsHooks'
 import {
@@ -40,14 +41,15 @@ async function buildConnection(cfg: NatsRuntimeConfig): Promise<NatsConnection> 
     }
   }
 
+  const servers = normalizeServers(cfg.servers)
   const transport = cfg.transport ?? 'auto'
   const useWs = transport === 'ws' || (transport === 'auto' && isBunRuntime())
 
   if (useWs) {
-    const wsServers = cfg.wsServers?.length ? cfg.wsServers : cfg.servers
+    const wsServers = cfg.wsServers?.length ? normalizeServers(cfg.wsServers) : servers
     return wsconnect({ servers: wsServers, ...opts })
   }
-  return connect({ servers: cfg.servers, ...opts })
+  return connect({ servers, ...opts })
 }
 
 async function drainAndClose() {
@@ -83,8 +85,8 @@ async function drainAndClose() {
 }
 
 interface NatsRuntimeConfig {
-  servers: string[]
-  wsServers: string[]
+  servers: string | string[]
+  wsServers: string | string[]
   transport: string
   token: string
   user: string

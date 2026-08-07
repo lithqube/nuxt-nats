@@ -37,7 +37,7 @@ The Nuxt app and worker process share the same build output but run with differe
 
 Never set credentials in `nuxt.config.ts` for production — use environment variables or a secrets manager.
 
-> **Multi-server failover:** `NUXT_NATS_SERVERS` accepts a comma-separated list. The NATS client type is `string | string[]`, so both `nats://a:4222` (single) and `nats://a:4222,nats://b:4222,nats://c:4222` (cluster) work. The client handles failover automatically — if one server is unreachable, it reconnects to the next in the list.
+> **Multi-server failover:** `NUXT_NATS_SERVERS` accepts a comma-separated list (e.g. `nats://a:4222,nats://b:4222,nats://c:4222`). The module splits the value into an array before passing it to the NATS client. Alternatively, set `servers` as an array in `nuxt.config.ts`. The client handles failover automatically — if one server is unreachable, it reconnects to the next in the list.
 
 ## Node.js (self-hosted)
 

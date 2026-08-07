@@ -6,9 +6,11 @@ import { useKV } from '../../src/runtime/server/utils/useKV'
 import { jsPublish } from '../../src/runtime/server/utils/publish'
 
 let ctx: NatsTestContext
+let containerHost: string
 
 beforeAll(async () => {
   ctx = await startNats()
+  containerHost = ctx.container.getHost()
 
   await ctx.jsm.streams.add({
     name: 'LIFECYCLE_TEST',
@@ -40,7 +42,7 @@ describe('connection resilience', () => {
     const nc = useNats()
     const server = nc.getServer()
     expect(server).toBeTruthy()
-    expect(server).toContain('localhost')
+    expect(server).toContain(containerHost)
   })
 
   it('RTT returns a non-negative roundtrip time', async () => {
