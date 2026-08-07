@@ -53,7 +53,15 @@ In production, prefer `'never'` and provision via the NATS CLI or IaC. See [ADR-
 
 ### replicas
 
-Set `replicas: 3` in clustered production deployments. `replicas: 1` is fine for development and single-node setups.
+Replication factor for the stream across the NATS cluster. Must be an odd number (for Raft quorum) and cannot exceed the cluster size.
+
+| Value | Use case |
+|---|---|
+| `1` | Development, single-node setups |
+| `3` | Standard production (tolerates 1 node loss) |
+| `5` | High-availability production (tolerates 2 node losses) |
+
+`replicas: 5` (R5) is the practical maximum — NATS JetStream supports up to 5 replicas per stream. Beyond R5, the Raft consensus overhead outweighs the durability benefit. Most production deployments use R3 (3-node cluster) or R5 (5-node cluster).
 
 ## Managing streams at runtime
 
