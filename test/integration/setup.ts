@@ -31,8 +31,10 @@ export async function startNats(): Promise<NatsTestContext> {
     _setConnectionForTesting(nc, js, jsm)
 
     return { container, nc, js, jsm }
-  } catch (err) {
-    try { await nc?.drain() } catch {}
+  }
+  catch (err) {
+    try { await nc?.drain() }
+    catch {}
     await container.stop()
     throw err
   }
