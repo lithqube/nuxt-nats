@@ -17,17 +17,32 @@ export async function startNats(): Promise<NatsTestContext> {
     .withJetStream()
     .start()
 
-  const nc = await connect(container.getConnectionOptions())
-  const js = jetstream(nc)
-  const jsm = await jetstreamManager(nc)
+  let nc: NatsConnection | undefined
+  try {
+    nc = await connect({
+      ...container.getConnectionOptions(),
+      maxReconnectAttempts: 5,
+      reconnectTimeWait: 500,
+      waitOnFirstConnect: true,
+    })
+    const js = jetstream(nc)
+    const jsm = await jetstreamManager(nc)
 
-  _setConnectionForTesting(nc, js, jsm)
+    _setConnectionForTesting(nc, js, jsm)
 
-  return { container, nc, js, jsm }
+    return { container, nc, js, jsm }
+  }
+  catch (err) {
+    try { await nc?.drain() }
+    catch {}
+    await container.stop()
+    throw err
+  }
 }
 
 export async function stopNats(ctx: NatsTestContext) {
-  try { await ctx.nc.drain() }
+  if (!ctx) return
+  try { await ctx.nc?.drain() }
   catch {}
-  await ctx.container.stop()
+  await ctx.container?.stop()
 }

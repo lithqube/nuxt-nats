@@ -2,7 +2,40 @@
 
 All notable changes to nuxt-nats are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Versions are published to npm — pre-releases under the `alpha` dist-tag.
+Versions are published to npm — pre-releases under the `beta` dist-tag starting at 0.1.0-beta.1.
+
+---
+
+## [0.1.0-beta.1] — 2026-08-07
+
+### Status: Production-validated
+
+This release graduates from alpha to beta. The module has been running in a multi-replica Docker Swarm production environment since June 2026, handling JetStream publish, ephemeral consumers (SSE), KV buckets (5 buckets, mixed TTLs), and JWT+NKey authentication under real traffic. No breaking changes from alpha.4 — the version bump reflects production confidence, not API changes.
+
+### Improved
+
+- **Testcontainers setup resilience** — integration test `startNats()` now passes explicit `maxReconnectAttempts` and `reconnectTimeWait` to avoid port-race flakiness on containers with slow startup. `stopNats()` is now null-safe (no crash if `beforeAll` failed to initialize the context).
+
+### Tests
+
+- 94 unit tests (unchanged)
+- New integration test file: `lifecycle.test.ts` — verifies `useJetStreamIfAvailable()` returns the client when connected, validates connection liveness (`isClosed()`, `getServer()`, `rtt()`), and exercises a combined publish + KV workflow within a single testcontainers session.
+- Total integration tests: 63 (up from 57)
+
+### Docs
+
+- CHANGELOG updated to reflect production validation status
+- Deployment guide: clarified `NUXT_NATS_SERVERS` env var works as a comma-separated string (NATS client accepts `string | string[]`)
+
+### Production guidance (from real deployments)
+
+The following patterns have been validated in production and are recommended:
+
+- **Stream retention limits** — always set `maxAge` and/or `maxBytes` on production streams to prevent unbounded disk growth.
+- **Explicit `duplicateWindow`** — set to match your retry window (e.g. `'5m'`) rather than relying on the NATS server default (2 minutes).
+- **`provision: 'never'` for production** — `'startup'` is safe (warns and skips on config drift) but `'update'` can race when multiple instances call `jsm.streams.update()` simultaneously during rolling deploys. Prefer `'never'` in production and provision streams via CLI or IaC.
+- **Lifecycle hooks for alerting** — register `useNatsHooks({ onDisconnect, onReconnect })` in a server plugin to surface connection drops in your monitoring. The module logs these internally, but hooks let you integrate with your alerting stack.
+- **`NUXT_NATS_SERVERS` multi-server** — pass all cluster nodes as a comma-separated string (e.g. `nats://a:4222,nats://b:4222,nats://c:4222`). The module splits the value into an array before passing to the NATS client, which handles failover automatically.
 
 ---
 

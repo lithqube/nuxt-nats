@@ -27,13 +27,17 @@ The Nuxt app and worker process share the same build output but run with differe
 
 | Variable | Description | Example |
 |---|---|---|
-| `NUXT_NATS_SERVERS` | Comma-separated server URLs | `nats://nats.internal:4222` |
+| `NUXT_NATS_SERVERS` | Comma-separated server URLs | `nats://a:4222,nats://b:4222` |
 | `NUXT_NATS_TOKEN` | Auth token | `s3cr3t` |
 | `NUXT_NATS_USER` | Username | `app` |
 | `NUXT_NATS_PASS` | Password | `s3cr3t` |
-| `NUXT_NATS_WORKERS` | Enable consumers | `true` |
+| `NUXT_NATS_USER_JWT` | User JWT credential | `eyJ0eXAi...` |
+| `NUXT_NATS_NKEY_SEED` | NKey seed (Ed25519) | `SUAM...` |
+| `NUXT_NATS_WORKERS` | Enable consumers/agents | `true` |
 
 Never set credentials in `nuxt.config.ts` for production — use environment variables or a secrets manager.
+
+> **Multi-server failover:** `NUXT_NATS_SERVERS` accepts a comma-separated list (e.g. `nats://a:4222,nats://b:4222,nats://c:4222`). The module splits the value into an array before passing it to the NATS client. Alternatively, set `servers` as an array in `nuxt.config.ts`. The client handles failover automatically — if one server is unreachable, it reconnects to the next in the list.
 
 ## Node.js (self-hosted)
 
