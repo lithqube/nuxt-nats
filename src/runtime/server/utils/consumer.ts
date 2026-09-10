@@ -1,5 +1,6 @@
 import { useJetStream, useJetStreamManager } from './useJetStream'
 import { jsPublish } from './publish'
+import { JetStreamApiError, JetStreamApiCodes } from '@nats-io/jetstream'
 import type { JsMsg } from '@nats-io/jetstream'
 
 const NANOS_PER_MS = 1_000_000
@@ -120,8 +121,14 @@ async function ensureConsumer(cfg: {
   try {
     existing = await jsm.consumers.info(cfg.stream, cfg.durable)
   }
-  catch {
-    // info() rejects when the durable does not exist; `existing` stays null.
+  catch (err) {
+    // ONLY a genuine not-found means "absent". Treating every rejection as absence would
+    // turn a permissions failure or a transport blip into either a spurious create under
+    // provision 'startup', or a ConsumerMissingError telling the operator to create a
+    // durable that already exists. Both send you looking in the wrong place.
+    const notFound = err instanceof JetStreamApiError
+      && err.code === JetStreamApiCodes.ConsumerNotFound
+    if (!notFound) throw err
   }
 
   if (!existing) {

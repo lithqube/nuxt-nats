@@ -3,6 +3,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useJetStream, useJetStreamManager } from '../../src/runtime/server/utils/useJetStream'
 import { jsPublish } from '../../src/runtime/server/utils/publish'
 import { defineNatsConsumer, stopAllConsumers } from '../../src/runtime/server/utils/consumer'
+import { JetStreamApiError } from '@nats-io/jetstream'
+
+/**
+ * The real client rejects consumers.info() with a typed JetStreamApiError carrying
+ * err_code 10014, not a bare Error. ensureConsumer() treats only that as absence, so the
+ * double has to produce the real shape or it exercises a case that cannot happen.
+ *
+ * JetStreamApiError, not ConsumerNotFoundError: the subclass exists in the type
+ * declarations but is NOT a runtime export of '@nats-io/jetstream', so constructing it
+ * throws a TypeError that then fails the not-found check for the wrong reason.
+ */
+function consumerNotFound() {
+  return new JetStreamApiError({ code: 404, err_code: 10014, description: 'consumer not found' })
+}
 
 vi.mock('../../src/runtime/server/utils/useJetStream', () => ({
   useJetStream: vi.fn(),
@@ -85,7 +99,7 @@ function setupJsmMock(existing: unknown = { config: {} }) {
   let created: unknown = existing
   const info = vi.fn().mockImplementation(() =>
     created === null
-      ? Promise.reject(new Error('consumer not found'))
+      ? Promise.reject(consumerNotFound())
       : Promise.resolve(created),
   )
   const add = vi.fn().mockImplementation((_stream: string, cfg: Record<string, unknown>) => {
@@ -455,22 +469,74 @@ describe('defineNatsConsumer', () => {
     })
 
     it('reports a missing durable once, not on every retry', async () => {
+      // Fake timers, because the retry delay is 5s and the previous version of this test
+      // waited 300ms in real time. It never reached a second retry, so it passed just as
+      // happily with the one-shot guard removed: it proved nothing.
+      //
+      // advanceTimersByTimeAsync in bounded steps rather than runAllTimersAsync, which
+      // would spin forever against this consumer's `while (!stopped)` loop.
+      vi.useFakeTimers()
+      try {
+        const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const handleRef: { current?: { stop: () => void } } = {}
+        setupJsMock([], handleRef)
+        setupJsmMock(null)
+
+        const missingLogs = () => errSpy.mock.calls
+          .flat()
+          .filter(a => typeof a === 'string' && a.includes('does not exist on stream'))
+
+        const handle = defineNatsConsumer({ stream: 'ORDERS', durable: 'billing', handler: vi.fn() })
+        handleRef.current = handle
+
+        // First pass: ensureConsumer throws, the message is logged, a 5s retry is queued.
+        await vi.advanceTimersByTimeAsync(50)
+        expect(missingLogs()).toHaveLength(1)
+
+        // Second and third passes: same failure, and it must stay quiet.
+        await vi.advanceTimersByTimeAsync(5_000)
+        await vi.advanceTimersByTimeAsync(5_000)
+        expect(missingLogs()).toHaveLength(1)
+
+        handle.stop()
+      }
+      finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('rethrows a non-not-found error instead of reading it as an absent durable', async () => {
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       const handleRef: { current?: { stop: () => void } } = {}
       setupJsMock([], handleRef)
-      setupJsmMock(null)
 
-      const handle = defineNatsConsumer({ stream: 'ORDERS', durable: 'billing', handler: vi.fn() })
+      // A permissions failure, not a missing consumer. Treating every rejection as absence
+      // would create the durable under 'startup', or tell the operator to create one that
+      // already exists under 'never'. Both point at the wrong problem.
+      const add = vi.fn()
+      vi.mocked(useJetStreamManager).mockReturnValue({
+        consumers: {
+          info: vi.fn().mockRejectedValue(
+            new JetStreamApiError({ code: 403, err_code: 10052, description: 'permissions violation' }),
+          ),
+          add,
+        },
+      } as any)
+
+      const handle = defineNatsConsumer({
+        stream: 'ORDERS',
+        durable: 'billing',
+        provision: 'startup',
+        handler: vi.fn(),
+      })
       handleRef.current = handle
-      // Long enough to cover more than one pass of the 5s retry backoff had it re-logged
-      // on every iteration.
-      await wait(300)
+      await wait()
       handle.stop()
 
-      const missing = errSpy.mock.calls
-        .flat()
-        .filter(a => typeof a === 'string' && a.includes('does not exist on stream'))
-      expect(missing).toHaveLength(1)
+      expect(add).not.toHaveBeenCalled()
+      const msg = errSpy.mock.calls.flat().join(' ')
+      expect(msg).toContain('loop error')
+      expect(msg).not.toContain('does not exist on stream')
     })
 
     it('flags a filter mismatch against the live durable', async () => {
