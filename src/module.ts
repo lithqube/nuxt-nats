@@ -1,11 +1,14 @@
+import { join, isAbsolute } from 'node:path'
 import {
   addServerImportsDir,
   addServerPlugin,
   addServerHandler,
+  addTemplate,
   createResolver,
   defineNuxtModule,
 } from '@nuxt/kit'
 import { defu } from 'defu'
+import { generateConsumerPlugin } from './consumerTemplate'
 
 export interface StreamDefinition {
   name: string
@@ -24,12 +27,6 @@ export interface StreamDefinition {
   provision?: 'startup' | 'update' | 'never'
 }
 
-/**
- * @deprecated Not implemented. Declaring consumers in `nats.consumers` never started
- * one, and now fails the build rather than doing so silently. Use
- * `defineNatsConsumer()` inside a Nitro server plugin instead. Kept so existing configs
- * get a type-level signal alongside the build error rather than only the latter.
- */
 export interface ConsumerDefinition {
   stream: string
   durable: string
@@ -39,7 +36,15 @@ export interface ConsumerDefinition {
   maxDeliver?: number
   backoff?: number[]
   deadLetterSubject?: string
-  /** Never resolved by the runtime. */
+  /**
+   * 'never'   — bind to an existing durable; never create one. Default.
+   * 'startup' — create the durable from this definition if it does not exist.
+   */
+  provision?: 'startup' | 'never'
+  /**
+   * Path to the handler module, relative to `server/` or absolute. It must
+   * default-export `(msg, payload) => Promise<void>`.
+   */
   handler?: string
 }
 
@@ -75,7 +80,11 @@ export interface ModuleOptions {
   /** Stream definitions to provision on startup. */
   streams?: StreamDefinition[]
   /** Declarative consumer definitions (runs only when NUXT_NATS_WORKERS=true). */
-  /** @deprecated Not implemented; a non-empty array fails the build. See ConsumerDefinition. */
+  /**
+   * Consumers to register. Compiled into a generated Nitro plugin at build time, so the
+   * handler modules are statically imported and survive bundling. Consumers start only
+   * when NUXT_NATS_WORKERS=true.
+   */
   consumers?: ConsumerDefinition[]
   health?: {
     /** Enable the /api/_nats/health endpoint. Default: true */
@@ -104,21 +113,6 @@ export default defineNuxtModule<ModuleOptions>({
   setup(options, nuxt) {
     const resolver = createResolver(import.meta.url)
 
-    // `consumers` has never been wired to anything. The array was copied into
-    // runtimeConfig and no runtime code read it back, and ConsumerDefinition.handler
-    // (a module path) was resolved nowhere, so declaring consumers here produced a
-    // build that started none of them and reported no error. Failing the build is the
-    // smaller harm: a silently idle consumer looks identical to a healthy one until
-    // messages pile up on the stream.
-    if (options.consumers?.length) {
-      throw new Error(
-        `[nuxt-nats] \`nats.consumers\` is not implemented and never starts a consumer. `
-        + `Declare consumers with defineNatsConsumer() inside a Nitro server plugin `
-        + `(server/plugins/*.ts), which Nitro auto-registers, and set NUXT_NATS_WORKERS=true `
-        + `so workers start. Note server/workers/*.ts is NOT scanned by Nitro.`,
-      )
-    }
-
     // Push NATS config into private runtimeConfig — credentials stay server-side only
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     nuxt.options.runtimeConfig.nats = defu(nuxt.options.runtimeConfig.nats as any, {
@@ -140,6 +134,29 @@ export default defineNuxtModule<ModuleOptions>({
 
     // Nitro plugin: manages connection lifecycle + SIGTERM drain
     addServerPlugin(resolver.resolve('./runtime/server/plugins/nats'))
+
+    // Declarative consumers are compiled into a generated Nitro plugin.
+    //
+    // Resolving ConsumerDefinition.handler at runtime is not possible in a bundled Nitro
+    // server, which is why this option previously did nothing at all: the array reached
+    // runtimeConfig and no code could act on it. Emitting static imports at build time is
+    // what makes it real. Registered AFTER the connection plugin so useJetStream() is
+    // available by the time a consumer starts.
+    //
+    // Deliberately not mirrored into runtimeConfig: the generated plugin is the single
+    // source of truth, and a second copy could only ever drift from it.
+    if (options.consumers?.length) {
+      const serverDir = join(nuxt.options.srcDir, 'server')
+      const generated = addTemplate({
+        filename: 'nats-consumers.mjs',
+        write: true,
+        getContents: () => generateConsumerPlugin(options.consumers!, {
+          consumerUtilPath: resolver.resolve('./runtime/server/utils/consumer'),
+          resolveHandler: (h: string) => (isAbsolute(h) ? h : join(serverDir, h)),
+        }),
+      })
+      addServerPlugin(generated.dst)
+    }
 
     // Auto-import server utils: useNats(), useJetStream(), useKV(), publish()
     addServerImportsDir(resolver.resolve('./runtime/server/utils'))

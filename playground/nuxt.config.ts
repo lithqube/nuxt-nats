@@ -22,6 +22,19 @@ export default defineNuxtConfig({
         provision: 'startup',
       },
     ],
+    consumers: [
+      {
+        stream: 'EVENTS',
+        durable: 'playground-events',
+        filterSubjects: ['events.created'],
+        ackPolicy: 'explicit',
+        ackWait: 30_000,
+        maxDeliver: 5,
+        deadLetterSubject: 'events.dlq',
+        provision: 'startup',
+        handler: 'workers/events',
+      },
+    ],
     health: {
       enabled: true,
       endpoint: '/api/_nats/health',
