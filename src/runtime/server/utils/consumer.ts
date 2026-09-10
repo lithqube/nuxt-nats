@@ -228,7 +228,11 @@ export function defineNatsConsumer<T = unknown>(opts: NatsConsumerOptions<T>): A
             catch (err) {
               console.error(`[nuxt-nats] Failed to publish to DLQ "${deadLetterSubject}":`, err)
             }
-            msg.term()
+            // term() carries a reason to the server since client 3.4.0, and the server
+            // puts it in the `reason` field of the io.nats.jetstream.advisory.v1.terminated
+            // advisory. A bare term() records that a message died but not why, which is
+            // exactly what you need at 3am. Costs nothing.
+            msg.term(`nuxt-nats: maxDeliver ${maxDeliver} exhausted, routed to ${deadLetterSubject}`)
             continue
           }
 
