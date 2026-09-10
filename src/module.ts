@@ -24,6 +24,12 @@ export interface StreamDefinition {
   provision?: 'startup' | 'update' | 'never'
 }
 
+/**
+ * @deprecated Not implemented. Declaring consumers in `nats.consumers` never started
+ * one, and now fails the build rather than doing so silently. Use
+ * `defineNatsConsumer()` inside a Nitro server plugin instead. Kept so existing configs
+ * get a type-level signal alongside the build error rather than only the latter.
+ */
 export interface ConsumerDefinition {
   stream: string
   durable: string
@@ -33,7 +39,7 @@ export interface ConsumerDefinition {
   maxDeliver?: number
   backoff?: number[]
   deadLetterSubject?: string
-  /** Path to the handler file (relative to server/ or absolute). */
+  /** Never resolved by the runtime. */
   handler?: string
 }
 
@@ -69,6 +75,7 @@ export interface ModuleOptions {
   /** Stream definitions to provision on startup. */
   streams?: StreamDefinition[]
   /** Declarative consumer definitions (runs only when NUXT_NATS_WORKERS=true). */
+  /** @deprecated Not implemented; a non-empty array fails the build. See ConsumerDefinition. */
   consumers?: ConsumerDefinition[]
   health?: {
     /** Enable the /api/_nats/health endpoint. Default: true */
@@ -97,6 +104,21 @@ export default defineNuxtModule<ModuleOptions>({
   setup(options, nuxt) {
     const resolver = createResolver(import.meta.url)
 
+    // `consumers` has never been wired to anything. The array was copied into
+    // runtimeConfig and no runtime code read it back, and ConsumerDefinition.handler
+    // (a module path) was resolved nowhere, so declaring consumers here produced a
+    // build that started none of them and reported no error. Failing the build is the
+    // smaller harm: a silently idle consumer looks identical to a healthy one until
+    // messages pile up on the stream.
+    if (options.consumers?.length) {
+      throw new Error(
+        `[nuxt-nats] \`nats.consumers\` is not implemented and never starts a consumer. `
+        + `Declare consumers with defineNatsConsumer() inside a Nitro server plugin `
+        + `(server/plugins/*.ts), which Nitro auto-registers, and set NUXT_NATS_WORKERS=true `
+        + `so workers start. Note server/workers/*.ts is NOT scanned by Nitro.`,
+      )
+    }
+
     // Push NATS config into private runtimeConfig — credentials stay server-side only
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     nuxt.options.runtimeConfig.nats = defu(nuxt.options.runtimeConfig.nats as any, {
@@ -113,7 +135,6 @@ export default defineNuxtModule<ModuleOptions>({
       jsDomain: options.jsDomain ?? '',
       jsApiPrefix: options.jsApiPrefix ?? '',
       streams: options.streams,
-      consumers: options.consumers,
       health: options.health,
     })
 
