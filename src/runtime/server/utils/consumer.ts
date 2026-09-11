@@ -1,3 +1,4 @@
+import { getJetStream } from '../plugins/_connection'
 import { useJetStream, useJetStreamManager } from './useJetStream'
 import { jsPublish } from './publish'
 import { JetStreamApiError, JetStreamApiCodes } from '@nats-io/jetstream'
@@ -202,10 +203,18 @@ export function defineNatsConsumer<T = unknown>(opts: NatsConsumerOptions<T>): A
 
   // Start async consumer loop
   ;(async () => {
-    const js = useJetStream()
+    // Nitro calls server plugins without awaiting async ones, so a consumer registered from a
+    // plugin (the generated nats.consumers plugin included) starts while the connection plugin
+    // is still connecting. Wait for the JetStream client, as defineNatsAgent() waits for the
+    // connection. Calling useJetStream() here instead threw, and the loop died as an unhandled
+    // rejection before consuming anything.
+    while (!stopped && !getJetStream()) {
+      await new Promise(r => setTimeout(r, 250))
+    }
 
     while (!stopped) {
       try {
+        const js = useJetStream()
         await ensureConsumer({ stream, durable, filterSubjects, ackPolicy, ackWait, maxDeliver, backoff, provision })
         const consumer = await js.consumers.get(stream, durable)
         // idle_heartbeat detects stale server-side subscriptions (network partition, server restart)

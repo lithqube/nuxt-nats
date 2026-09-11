@@ -21,7 +21,16 @@ newest published, and `3.4.1-0` is documentation-only.
   module path) was resolved nowhere. A declarative consumer block typechecked, deployed,
   and consumed nothing, silently. It is now compiled into a generated Nitro plugin at
   build time with each handler statically imported, which is what makes a module path
-  work in a bundled server.
+  work in a bundled server. Relative handler paths resolve against the server directory
+  (`nuxt.options.serverDir`), so they also work in the Nuxt 4 `app/` layout.
+- **Consumers registered from a Nitro plugin never started.** Nitro does not await async
+  plugins, so every plugin after the connection plugin runs before the connection exists,
+  and `defineNatsConsumer()` called `useJetStream()` first thing: it threw, the loop died as
+  an unhandled rejection, and nothing was consumed. That covered consumers in
+  `server/plugins/`, the generated `nats.consumers` plugin and `defineDeadLetterConsumer()`.
+  The loop now waits for the JetStream client, and the connection plugin publishes that
+  client only after provisioning streams, so a consumer that starts at boot does not race
+  its own stream's creation.
 - **`filterSubjects` was accepted and never read.** `defineNatsConsumer` only called
   `js.consumers.get()`, which binds to a durable whose filter is server-side state it
   cannot change, so a consumer could name one subject in code and receive another. It is
@@ -71,11 +80,13 @@ newest published, and `3.4.1-0` is documentation-only.
 
 ### Tests
 
-- 138 unit tests across 14 files (up from 94), 63 integration tests (unchanged)
+- 144 unit tests across 16 files (up from 94), 63 integration tests (unchanged)
 - New unit test files: `consumerTemplate.test.ts` (generated plugin source), `deadLetter.test.ts`
   (advisory mapping and message recovery), `statusHandling.test.ts` (`onReconnect` once per
-  outage). `consumer.test.ts` extended for provisioning, filter mismatch, not-found detection and
-  one-shot missing-durable logging.
+  outage), `moduleConsumers.test.ts` (handler paths against `serverDir`), `natsPlugin.test.ts`
+  (JetStream published only after stream provisioning). `consumer.test.ts` extended for
+  provisioning, filter mismatch, not-found detection, one-shot missing-durable logging, and
+  consumers registered before the connection exists.
 
 ### Docs
 

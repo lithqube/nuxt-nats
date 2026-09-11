@@ -63,9 +63,9 @@ Pre-releases have been on the `beta` dist-tag since 0.1.0-beta.1. Do not run `ve
 
 It also marks the `@nats-io/*` and `@synadia-ai/*` packages as Nitro externals in the `nitro:config` hook.
 
-The connection plugin validates the user JWT, connects, starts JetStream, provisions declared streams, and registers SIGTERM/SIGINT handlers. The Nitro `close` hook is also registered but is unreliable (nitrojs/nitro#4015) — the manual signal handlers are the real shutdown path. `drainAndClose()` runs `stopAllAgents()` → `closeAgents()` → `stopAllConsumers()` → `nc.drain()`, each step error-isolated.
+The connection plugin validates the user JWT, connects, provisions declared streams, then publishes the JetStream client and manager (`_js`/`_jsm`), and registers SIGTERM/SIGINT handlers. The Nitro `close` hook is also registered but is unreliable (nitrojs/nitro#4015) — the manual signal handlers are the real shutdown path. `drainAndClose()` runs `stopAllAgents()` → `closeAgents()` → `stopAllConsumers()` → `nc.drain()`, each step error-isolated.
 
-**Nitro (nitropack 2) calls server plugins in order without awaiting async ones.** Every plugin after `nats.ts`, the generated consumers plugin and the app's own `server/plugins/` included, runs while the connection is still pending, so code that runs at plugin time must not assume `_nc`/`_js` exist. `defineNatsAgent()` polls `getNatsConnection()` every 250 ms before registering. `defineNatsConsumer()` does not wait yet: its loop calls `useJetStream()` before the retry `try`, so a consumer registered at plugin time dies with an unhandled rejection until that is fixed.
+**Nitro (nitropack 2) calls server plugins in order without awaiting async ones.** Every plugin after `nats.ts`, the generated consumers plugin and the app's own `server/plugins/` included, runs while the connection is still pending, so code that runs at plugin time must not assume `_nc`/`_js` exist. `defineNatsAgent()` polls `getNatsConnection()` and `defineNatsConsumer()` polls `getJetStream()`, both every 250 ms, before starting. `_js`/`_jsm` are set only after `provisionStreams()`, so a consumer that starts at boot never looks up its durable on a stream that is still being created.
 
 ### Singleton isolation for testing
 
@@ -73,7 +73,7 @@ The connection plugin validates the user JWT, connects, starts JetStream, provis
 
 `_setConnectionForTesting(nc, js, jsm)` is the integration test entry point — it wires a real Testcontainers connection into the singletons without touching the Nitro plugin.
 
-The one exception is `test/unit/statusHandling.test.ts`, which needs `handleStatus()` from `nats.ts`: it mocks `nitropack/runtime` with `vi.mock` first, then loads the plugin with a dynamic `await import()`.
+The exceptions are `test/unit/statusHandling.test.ts` (for `handleStatus()`) and `test/unit/natsPlugin.test.ts` (for the boot order): they mock `nitropack/runtime` with `vi.mock` first, then load the plugin with a dynamic `await import()`.
 
 ### Connection lifecycle hooks
 
@@ -91,7 +91,7 @@ The async message loop runs in a detached `async IIFE`. `handle.stop()` sets `st
 
 ### Consumer loop
 
-`defineNatsConsumer` (in `utils/consumer.ts`) runs a `while (!stopped)` loop. Each pass calls `ensureConsumer()`, then `js.consumers.get(stream, durable)` and `consumer.consume({ max_messages: 1, idle_heartbeat: 5_000 })`. Key behavior:
+`defineNatsConsumer` (in `utils/consumer.ts`) first waits, while `!stopped`, for `getJetStream()`, then runs a `while (!stopped)` loop. Each pass calls `useJetStream()` inside the retry `try`, then `ensureConsumer()`, `js.consumers.get(stream, durable)` and `consumer.consume({ max_messages: 1, idle_heartbeat: 5_000 })`. Key behavior:
 - `NUXT_NATS_WORKERS=true` must be set or the function is a no-op
 - `ensureConsumer()` calls `jsm.consumers.info()`. Only `err instanceof JetStreamApiError && err.code === JetStreamApiCodes.ConsumerNotFound` counts as absent; anything else rethrows into the loop's retry. `ConsumerNotFoundError` is declared in the `.d.ts` but is not a runtime export of `@nats-io/jetstream`
 - Absent + `provision: 'startup'` → `jsm.consumers.add()`. `ackWait` and `backoff` are converted ms → ns there (passing ms would set a microsecond ack wait); one filter subject is sent as `filter_subject`, several as `filter_subjects`
@@ -108,6 +108,8 @@ The async message loop runs in a detached `async IIFE`. `handle.stop()` sets `st
 ### Declarative consumers
 
 `nats.consumers` is compiled at build time. `generateConsumerPlugin()` in `src/consumerTemplate.ts` is a pure string function (unit-tested on its output) that emits a Nitro plugin statically importing each `handler` path and calling `defineNatsConsumer()` with the entry. It throws on a missing `stream`/`durable`/`handler`, a duplicate stream + durable, or a `'`, `\` or newline in an interpolated value. `module.ts` injects `resolveHandler` and the consumer util path. The array is intentionally not mirrored into `runtimeConfig`.
+
+Relative `handler` paths resolve against `nuxt.options.serverDir`, never `<srcDir>/server`: in Nuxt 4 `srcDir` is `app/` whenever that directory exists. A handler import that does not resolve only warns at build time ("treating it as an external dependency"), then crashes every process with `ERR_MODULE_NOT_FOUND` at startup.
 
 ### Dead-letter handling
 
@@ -154,6 +156,7 @@ declare module 'nuxt-nats' {
 - **`@nats-io/nats-core`** is the correct import for `nkeyAuthenticator` and `jwtAuthenticator`, not `@nats-io/nkeys`.
 - **Integration tests run in a single fork** (`singleFork: true`) — Testcontainers container is shared across all integration suites via `beforeAll`/`afterAll` in each file calling `startNats()`/`stopNats()`.
 - Unit test consumer mocks need a `handleRef` pattern (see `test/unit/consumer.test.ts`) to avoid the while-loop spinning after the mock iterator is exhausted.
+- **Consumer unit tests must make `getJetStream()` return a client** — `consumer.test.ts` mocks `_connection.ts` with a `connection` double for this. Mocking `useJetStream()` alone leaves the loop waiting forever for the connection.
 - **JSM test doubles for the consumer must be stateful:** `info()` should start answering once `add()` succeeds, and "not found" must be a real `JetStreamApiError` carrying `JetStreamApiCodes.ConsumerNotFound`. A stub that rejects forever makes the loop re-create on every pass and fails a correct implementation.
 - **Console spy cleanup:** always use `afterEach(() => vi.restoreAllMocks())` instead of manual `spy.mockRestore()` — manual calls leak if the test throws before reaching them.
 - **`vi.useFakeTimers()` + `while(!stopped)` loops:** do not call `vi.runAllTimersAsync()` while a consumer loop is active — it enters an infinite cycle. Stop the consumer first, or advance in bounded `vi.advanceTimersByTimeAsync()` steps.
