@@ -151,13 +151,15 @@ Validation runs on every boot, so an expired JWT in a staging environment fails 
 
 ## Auth errors
 
-When the server rejects the connection for credential reasons (expired, revoked, missing permissions, signature mismatch), the NATS status event carries an `AUTH ERROR` reason. The plugin logs these with a distinct prefix:
+The plugin watches the connection's status events. An error whose message contains `Authorization` (as in the server's `Authorization Violation`) or `Permissions Violation` is logged with a distinct prefix:
 
 ```
-[nuxt-nats] AUTH ERROR: authorization violation
+[nuxt-nats] AUTH ERROR — JWT may be expired or missing permissions: <error>
 ```
 
-This is separate from generic NATS errors (network drops, timeouts), which log as `NATS error: …`. The split makes alerting rules straightforward — a spike in `AUTH ERROR` lines is a credential problem, not an infrastructure problem.
+Every other status error logs as `[nuxt-nats] NATS error: …`. The split makes alerting rules straightforward — a spike in `AUTH ERROR` lines is a credential problem, not an infrastructure problem. Match on `AUTH ERROR` rather than `AUTH ERROR:`, since the prefix is followed by a dash.
+
+The check is a case-sensitive match on those two strings only, so a credential failure the client reports in other words logs as a plain `NATS error`. Alert on both prefixes if you need full coverage.
 
 ## Production checklist
 
@@ -173,9 +175,9 @@ This is separate from generic NATS errors (network drops, timeouts), which log a
 
 **Connection succeeds but every publish returns `permissions violation`** — the JWT decoded correctly but the user's permissions in the account config don't allow the subject. Check the account's `limits` and `permissions` in the operator config.
 
-**`AUTH ERROR: authentication expired`** — the JWT's `exp` claim is past. The startup validator should have caught this; if you see it at runtime, the JWT was valid at boot but expired mid-session (expected for long-running processes — rotate the credential).
+**Connection starts failing after running fine for hours** — the JWT's `exp` claim has passed. The startup validator only checks at boot, so a JWT that was valid then can expire mid-session (expected for long-running processes — rotate the credential).
 
-**`AUTH ERROR: user not authorized`** — the JWT's `nats` claim doesn't match a user the server knows about. Usually a stale credential file from a previous `nsc` run.
+**`Failed to connect to NATS` with an authorization error at boot** — the server rejected the credential on the initial connect (that path logs `Failed to connect to NATS` and fires `onConnectError`; the `AUTH ERROR` prefix applies to status errors after connecting). If the JWT's `nats` claim doesn't match a user the server knows about, it is usually a stale credential file from a previous `nsc` run.
 
 **Connection works with `nkeySeed` alone but fails with `userJwt + nkeySeed`** — the JWT and seed are from different users. They must come from the same `nsc generate creds` output.
 

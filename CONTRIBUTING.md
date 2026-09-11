@@ -68,21 +68,41 @@ Non-trivial design changes should be captured as an ADR in `docs/adr/`. See exis
 
 ## Releases
 
-Maintainers cut releases. There are two release paths:
+Maintainers cut releases. CI does not publish: releases go out by hand from an up-to-date `main`.
 
-### Alpha release (pre-release, `alpha` dist-tag)
+### Beta release (current pre-release channel, `beta` dist-tag)
 
-Bumps `0.x.y-alpha.N → 0.x.y-alpha.N+1`, runs all tests, publishes under the `alpha` tag, and commits + pushes the version bump in one step:
+Pre-releases have shipped under the `beta` dist-tag since 0.1.0-beta.1. There is no npm script for this path yet.
+
+1. In a PR, bump the version and add its CHANGELOG entry, then merge to `main`:
+
+   ```bash
+   npm version prerelease --preid=beta --no-git-tag-version   # 0.1.0-beta.N → 0.1.0-beta.N+1
+   ```
+
+2. From `main`, verify, build and publish:
+
+   ```bash
+   npm run lint && npm run test:all && npm run prepack
+   npm publish --tag beta
+   ```
+
+3. Tag the merge commit and push the tag:
+
+   ```bash
+   git tag -a v0.1.0-beta.N -m "v0.1.0-beta.N"
+   git push origin v0.1.0-beta.N
+   ```
+
+Since 0.1.0-beta.1, `latest` has also pointed at the newest beta, so a plain `npm install nuxt-nats` installs it. `npm publish --tag beta` does not move `latest`; if it should follow, move it explicitly:
 
 ```bash
-npm run release:alpha
+npm dist-tag add nuxt-nats@0.1.0-beta.N latest
 ```
 
-Consumers must opt in explicitly — `npm install nuxt-nats` still installs the latest stable.
+### Alpha release (retired)
 
-```bash
-npm install nuxt-nats@alpha   # install latest alpha
-```
+`npm run release:alpha` publishes under the `alpha` tag and dates from the alpha series. Do not run it, or `npm run version:bump-alpha`, on a beta version: `--preid=alpha` turns `0.1.0-beta.N` into `0.1.0-alpha.0`, which sorts *below* the betas already published.
 
 ### Stable release
 

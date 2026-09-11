@@ -42,6 +42,17 @@ function useJetStream(): JetStreamClient
 
 Use for direct JetStream operations beyond what `jsPublish` and `defineNatsConsumer` expose:
 
+```ts
+const js = useJetStream()
+
+// Direct publish (no retry)
+await js.publish('orders.created', new TextEncoder().encode(JSON.stringify(data)))
+
+// Consumer access
+const consumer = await js.consumers.get('ORDERS', 'billing')
+const iter = await consumer.consume()
+```
+
 ---
 
 ## useJetStreamIfAvailable()
@@ -77,8 +88,8 @@ function useNatsHooks(hooks: {
 | Hook | When it fires |
 |---|---|
 | `onConnectError` | Initial connection attempt fails on boot |
-| `onReconnect` | Client successfully reconnects after a disconnect |
-| `onDisconnect` | Client loses its connection to a server |
+| `onReconnect` | Client recovers from a disconnect. Fires once per outage: the first `reconnect` status after a `disconnect` is forwarded, and repeat `reconnect` statuses with no `disconnect` in between are dropped (the client can emit one per retry attempt, nats.js#423) |
+| `onDisconnect` | Client loses its connection to a server. Fires on every `disconnect` status |
 
 ```ts
 // server/plugins/nats-hooks.ts
@@ -147,21 +158,6 @@ export default defineEventHandler(async (event) => {
   stream.onClosed(() => handle.stop())       // client disconnected
   return stream.send()
 })
-```
-
----
-
-## useJetStream() (continued)
-
-```ts
-const js = useJetStream()
-
-// Direct publish (no retry)
-await js.publish('orders.created', encoder.encode(JSON.stringify(data)))
-
-// Consumer access
-const consumer = await js.consumers.get('ORDERS', 'billing')
-const iter = await consumer.consume()
 ```
 
 ---
@@ -384,7 +380,7 @@ Use for metrics, ephemeral events, or any case where JetStream PubAck latency is
 
 ## defineNatsConsumer(opts)
 
-Register and start a durable pull consumer. Requires `NUXT_NATS_WORKERS=true` — returns a no-op otherwise.
+Register and start a durable pull consumer. Requires `NUXT_NATS_WORKERS=true` — logs a skip warning and returns a no-op handle otherwise. Call it from a Nitro plugin (`server/plugins/`); see the [Consumers guide](./guides/consumers.md).
 
 ```ts
 function defineNatsConsumer<T = unknown>(opts: NatsConsumerOptions<T>): ActiveConsumer
@@ -395,13 +391,17 @@ function defineNatsConsumer<T = unknown>(opts: NatsConsumerOptions<T>): ActiveCo
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `stream` | `string` | required | Stream name |
-| `durable` | `string` | required | Durable consumer name (must exist on NATS server) |
-| `filterSubjects` | `string[]` | — | Subject filters (subset of stream subjects) |
-| `ackWait` | `number` | `30_000` | Ms before unacked message is redelivered |
-| `maxDeliver` | `number` | `5` | Max delivery attempts (1 original + N-1 redeliveries) before DLQ routing |
-| `backoff` | `number[]` | — | Per-redelivery nak delay in ms. `backoff[0]` applies after the 1st failure, `backoff[1]` after the 2nd, etc. Last entry is reused for all subsequent failures. |
-| `deadLetterSubject` | `string` | — | JetStream subject for unprocessable messages. Must be covered by a stream. |
-| `handler` | `(msg: JsMsg, payload: T) => Promise<void>` | required | Message handler |
+| `durable` | `string` | required | Durable consumer name. Must already exist unless `provision` is `'startup'` |
+| `provision` | `'startup' \| 'never'` | `'never'` | `'never'` binds to an existing durable, and reports a missing one once with the `nats consumer add` command that creates it. `'startup'` creates the durable from this config when it is missing |
+| `filterSubjects` | `string[]` | — | The durable's subject filter. Written only when this call creates the durable; against an existing durable a different value is logged as a mismatch and the live filter wins |
+| `ackPolicy` | `'explicit' \| 'none' \| 'all'` | `'explicit'` | Written only when this call creates the durable |
+| `ackWait` | `number` | `30_000` | Ms. Sets the `msg.working()` heartbeat interval (`ackWait / 2`), and the durable's `ack_wait` when this call creates it |
+| `maxDeliver` | `number` | `5` | With `deadLetterSubject` set, the delivery attempt on which a message is routed there. Also the durable's `max_deliver` when this call creates it; an existing durable's `max_deliver` must be at least this (or unlimited), or the server stops redelivering first |
+| `backoff` | `number[]` | — | Per-redelivery nak delay in ms. `backoff[0]` applies after the 1st failure, `backoff[1]` after the 2nd, etc. Last entry is reused for all subsequent failures. Also written to the durable when this call creates it, in which case the server requires `maxDeliver` to exceed `backoff.length` |
+| `deadLetterSubject` | `string` | — | JetStream subject for unprocessable messages. Must be covered by a stream. Without it, a message that exhausts the durable's `max_deliver` is dropped by the server, leaving only an advisory (see [`defineDeadLetterConsumer`](#definedeadletterconsumeropts)) |
+| `handler` | `(msg: JsMsg, payload: T) => Promise<void>` | required | Message handler. `payload` is `JSON.parse(msg.string())`, or the raw string when that fails |
+
+`NatsConsumerOptions` is auto-imported as a type in `server/`.
 
 **ActiveConsumer:**
 
@@ -413,6 +413,28 @@ interface ActiveConsumer {
 
 ---
 
+## Module option: `nats.consumers`
+
+Declares consumers in `nuxt.config` instead of calling `defineNatsConsumer()`. At build time the module compiles the array into a generated Nitro plugin that statically imports each handler and passes the entry to `defineNatsConsumer()`, so the same fields, defaults and `NUXT_NATS_WORKERS` gate apply.
+
+```ts
+nats: {
+  consumers: [
+    {
+      stream: 'ORDERS',
+      durable: 'billing',
+      filterSubjects: ['orders.created'],
+      provision: 'startup',
+      handler: 'workers/billing',   // relative to server/, or absolute
+    },
+  ],
+}
+```
+
+`ConsumerDefinition` has the `NatsConsumerOptions` fields, except that `handler` is a module path whose default export is the `(msg, payload) => Promise<void>` handler. The build fails when an entry is missing `stream`, `durable` or `handler`, when two entries share a stream and durable, or when `stream`, `durable`, `filterSubjects` or `deadLetterSubject` contain a single quote, backslash or newline. The array is not copied into `runtimeConfig`.
+
+---
+
 ## stopAllConsumers()
 
 Stop all consumers registered in the current process. Called automatically during graceful shutdown.
@@ -420,6 +442,60 @@ Stop all consumers registered in the current process. Called automatically durin
 ```ts
 function stopAllConsumers(): void
 ```
+
+---
+
+## defineDeadLetterConsumer(opts)
+
+Consume dead-letter advisories durably. NATS has no dead-letter queue: when a message exhausts `max_deliver` the server drops it and publishes an advisory, and `msg.term()` publishes another. This registers a durable consumer (through `defineNatsConsumer`, so the `NUXT_NATS_WORKERS` gate applies) on a stream you provision over both advisory subjects, and hands your handler a normalised event with the original message fetched by sequence.
+
+```ts
+function defineDeadLetterConsumer(opts: DeadLetterConsumerOptions): ActiveConsumer
+```
+
+**DeadLetterConsumerOptions:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `stream` | `string` | required | The stream capturing the advisory subjects — not the stream your messages are on. Provision it over `ADVISORY_MAX_DELIVERIES` and `ADVISORY_MSG_TERMINATED` |
+| `durable` | `string` | required | Durable consumer name on that stream |
+| `provision` | `'startup' \| 'never'` | `'never'` | As for `defineNatsConsumer` |
+| `ackWait` | `number` | `30_000` | Ms |
+| `recoverMessage` | `boolean` | `true` | Fetch the original message by sequence before calling the handler. Set `false` to skip the round trip when the metadata is enough |
+| `onDeadLetter` | `(event: DeadLetterEvent, msg: JsMsg) => Promise<void>` | required | Called once per advisory. Ack `msg` yourself; a handler that throws is nak'd and redelivered |
+
+There is deliberately no `deadLetterSubject` here: routing a failing dead-letter handler into another dead-letter subject builds a loop.
+
+**DeadLetterEvent:**
+
+```ts
+interface DeadLetterEvent {
+  kind: 'max_deliver' | 'terminated' | 'unknown'   // from the advisory's `type`
+  stream: string              // the stream the dead message lived on, not the advisory stream
+  consumer: string
+  streamSeq: number
+  deliveries: number
+  consumerSeq?: number        // terminated advisories only
+  reason?: string             // the msg.term(reason) string, terminated advisories only
+  advisory: MaxDeliverAdvisory | TerminatedAdvisory
+  message: StoredMsg | null   // null when recovery is off, the message aged out, or the fetch failed
+}
+```
+
+When the fetch fails, typically because the message has aged out of a stream whose `max_age` is shorter than the advisory stream's, a warning is logged and the handler still runs with `message: null`.
+
+**Also exported** (auto-imported in `server/`):
+
+| Name | Kind | Description |
+|---|---|---|
+| `ADVISORY_MAX_DELIVERIES` | constant | `'$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>'` |
+| `ADVISORY_MSG_TERMINATED` | constant | `'$JS.EVENT.ADVISORY.CONSUMER.MSG_TERMINATED.>'` |
+| `toDeadLetterEvent(advisory)` | function | The pure advisory-to-event mapping `defineDeadLetterConsumer` uses, without `message` |
+| `MaxDeliverAdvisory` | type | `io.nats.jetstream.advisory.v1.max_deliver` payload. Has no `consumer_seq` |
+| `TerminatedAdvisory` | type | `io.nats.jetstream.advisory.v1.terminated` payload, with `consumer_seq` and `reason` |
+| `DeadLetterEvent`, `DeadLetterConsumerOptions`, `DeadLetterKind` | type | As above |
+
+See the [dead-letter section of the Consumers guide](./guides/consumers.md#dead-letter-queue-dlq) for the stream to provision and the two mistakes this avoids.
 
 ---
 

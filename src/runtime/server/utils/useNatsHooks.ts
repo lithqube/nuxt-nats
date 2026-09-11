@@ -25,7 +25,7 @@ const _disconnectHooks: DisconnectHook[] = []
 export function useNatsHooks(hooks: {
   /** Called when the initial connection attempt fails. */
   onConnectError?: ConnectErrorHook
-  /** Called each time the client successfully reconnects after a disconnect. */
+  /** Called once per outage, when the client reconnects after a disconnect. Repeat reconnect statuses with no disconnect in between are not forwarded (nats.js#423). */
   onReconnect?: ReconnectHook
   /** Called each time the client loses its connection to a server. */
   onDisconnect?: DisconnectHook

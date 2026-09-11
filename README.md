@@ -14,16 +14,17 @@ NATS JetStream integration for Nuxt. Server-side publish, typed consumers, KV an
 ## Features
 
 - **JetStream publish** with automatic JSON encoding, retry, per-message deduplication (`Nats-Msg-Id`), typed tracing headers, and custom NATS message headers
-- **Pull consumers** with ackWait heartbeats, configurable backoff, and dead-letter routing
+- **Pull consumers** via `defineNatsConsumer()` or declared in `nuxt.config`, with opt-in durable provisioning, ackWait heartbeats, configurable backoff, and dead-letter routing
+- **Dead-letter handling** via `defineDeadLetterConsumer()` — NATS has no dead-letter queue, so this consumes max-deliver and terminated advisories from a stream and recovers the original message
 - **Ephemeral consumers** via `useEphemeralConsumer()` — request-scoped consumers with timeout, disconnect cleanup, and per-message error isolation (ideal for SSE endpoints)
-- **Connection lifecycle hooks** via `useNatsHooks()` — attach `onConnectError`, `onReconnect`, and `onDisconnect` callbacks for alerting and metrics
+- **Connection lifecycle hooks** via `useNatsHooks()` — attach `onConnectError`, `onReconnect` (once per outage), and `onDisconnect` callbacks for alerting and metrics
 - **KV buckets** via `useKV(bucket)` — cached per process
 - **Object Store** via `useObj(bucket)` — stream large blobs through Nitro handlers
 - **Agent Fabric** via `defineNatsAgent()` / `useAgents()` — expose the server as a discoverable AI agent on the NATS bus or call other agents, on the [Synadia Agent Protocol](docs/guides/agents.md) (streaming, mid-stream human-in-the-loop, heartbeats)
 - **Stream auto-provisioning** on startup (opt-in per stream, with `'update'` mode for config reconciliation)
-- **Health endpoint** at `/api/_nats/health` — connection status, RTT, JetStream account stats
+- **Health endpoint** at `/api/_nats/health` — connection status, RTT, JetStream account stats, registered agents
 - **Typed subjects** — augment `NatsEvents` to get end-to-end type safety on `jsPublish`
-- **Graceful shutdown** — drains in-flight messages on `SIGTERM`/`SIGINT` (works around [nitrojs/nitro#4015](https://github.com/nitrojs/nitro/issues/4015))
+- **Graceful shutdown** — stops agents and consumers, then drains the connection on `SIGTERM`/`SIGINT` (works around [nitrojs/nitro#4015](https://github.com/nitrojs/nitro/issues/4015))
 - **Bun-ready** — auto-detects Bun runtime and uses WebSocket transport
 
 ## Requirements
@@ -212,9 +213,9 @@ defineNatsConsumer({
 
 Under the default `provision: 'never'`, a missing durable is reported once with an actionable error rather than retried silently.
 
-`filterSubjects`, `ackPolicy`, `ackWait` and `maxDeliver` describe the durable and are applied only when this call creates it. When the durable already exists, a declared `filterSubjects` that disagrees with the live one is reported as a mismatch: binding cannot change a server-side filter, so the consumer receives the live set.
+`filterSubjects`, `ackPolicy`, `ackWait`, `maxDeliver` and `backoff` describe the durable and are written to it only when this call creates it; `ackWait`, `maxDeliver` and `backoff` also drive the module's own heartbeat, dead-letter and nak timing on every run. When the durable already exists, a declared `filterSubjects` that disagrees with the live one is reported as a mismatch: binding cannot change a server-side filter, so the consumer receives the live set.
 
-> **`nats.consumers` in `nuxt.config` is not implemented.** It never started a consumer, and a non-empty array now fails the build rather than doing so silently. Use `defineNatsConsumer()` as above.
+The same options can be declared in `nuxt.config` instead; see [Declarative consumers](#declarative-consumers-in-nuxtconfig). Either way, start the process that should consume with the flag set:
 
 ```bash
 NUXT_NATS_WORKERS=true node .output/server/index.mjs
@@ -266,9 +267,13 @@ on the same durable. Consumers still start only when `NUXT_NATS_WORKERS=true`.
 message exhausts `max_deliver` the server drops it and publishes an advisory, and that
 advisory is the only signal you get.
 
-`deadLetterSubject` on a consumer covers the common case: this module republishes the
-message to that subject before terminating it. For everything else, including messages that
-died on consumers you do not own, consume the advisories directly:
+`deadLetterSubject` on a consumer covers the common case: on the `maxDeliver`-th delivery
+this module republishes the message to that subject, then terminates it with a reason, which
+the server records in a `MSG_TERMINATED` advisory. The durable's own `max_deliver` must be at
+least `maxDeliver` (or unlimited), otherwise the server gives up first and the republish never
+happens; under `provision: 'startup'` the module creates the durable with `max_deliver` set to
+`maxDeliver`. For everything else, including messages that died on consumers you do not own,
+consume the advisories directly:
 
 ```ts
 // nuxt.config.ts — capture advisories into a stream you own
@@ -389,27 +394,36 @@ await jsPublish('orders.created', { id: '123', foo: 'bar' })    // ✗ type erro
 ```ts
 export default defineNuxtConfig({
   nats: {
-    // TCP servers (Node.js / Bun via compat)
+    // TCP servers. Default: ['nats://localhost:4222']
     servers: ['nats://localhost:4222'],
 
-    // WebSocket servers (Bun native / Cloudflare Workers)
+    // WebSocket servers for the WebSocket transport (falls back to `servers` when empty)
     wsServers: ['wss://nats.example.com'],
 
-    // 'auto' | 'tcp' | 'ws'  — default: 'auto'
+    // 'auto' | 'tcp' | 'ws' — default 'auto': WebSocket when running on Bun, TCP otherwise
     transport: 'auto',
 
-    // Auth — prefer env vars in production
+    // Auth — prefer env vars in production. The first match wins:
+    // userJwt + nkeySeed > userJwt > nkeySeed > token > user/pass > anonymous
+    userJwt: '',
+    nkeySeed: '',
     token: '',
     user: '',
     pass: '',
 
+    // TLS: caFile for server TLS; add certFile + keyFile for mTLS
+    tls: {
+      caFile: '/etc/ssl/certs/nats-ca.pem',
+    },
+
     // -1 = infinite reconnects (default)
     maxReconnectAttempts: -1,
 
-    // JetStream domain for multi-tenant setups
+    // JetStream domain and API prefix for multi-tenant setups
     jsDomain: '',
+    jsApiPrefix: '',
 
-    // Streams to provision on startup
+    // Stream definitions, created on boot when provision is 'startup' or 'update'
     streams: [
       {
         name: 'ORDERS',
@@ -417,9 +431,15 @@ export default defineNuxtConfig({
         retention: 'limits',      // 'limits' | 'workqueue' | 'interest'
         storage: 'file',          // 'file' | 'memory'
         replicas: 1,
+        maxAge: '7d',             // Go-style durations: '30s', '5m', '2h', '7d'
+        maxBytes: 1_073_741_824,  // 1 GB
+        duplicateWindow: '5m',
         provision: 'startup',     // 'startup' | 'update' | 'never' (default: 'never')
       },
     ],
+
+    // Consumers compiled into a generated Nitro plugin (see Declarative consumers above)
+    consumers: [],
 
     health: {
       enabled: true,
@@ -463,7 +483,7 @@ NUXT_NATS_USER_JWT='eyJ0eXAiOiJqd3Q...'  # full user JWT
 NUXT_NATS_NKEY_SEED='SUACSP3ZI...'       # matching user NKey seed (omit for unsigned JWT)
 ```
 
-On startup the module checks the JWT's `exp` claim and logs a warning if it expires within 24 hours, or an error if it is already expired. Auth errors from the server (expired, revoked, missing permissions) are logged with an `AUTH ERROR` prefix so they are distinguishable from network errors. See the [NATS JWT guide](https://docs.nats.io/running-a-nats-service/nats_admin/security/jwt) for chain-of-trust details.
+On startup the module checks the JWT's `exp` claim and logs a warning if it expires within 24 hours, or an error if it is already expired. Connection-status errors that mention `Authorization` or `Permissions Violation` are logged with an `AUTH ERROR` prefix so they are distinguishable from network errors; see [Auth errors](docs/guides/auth.md#auth-errors) for the exact format. See the [NATS JWT guide](https://docs.nats.io/running-a-nats-service/nats_admin/security/jwt) for chain-of-trust details.
 
 ## Health endpoint
 
@@ -486,6 +506,8 @@ GET /api/_nats/health
   }
 }
 ```
+
+When agents are registered in the process, the response also carries an `agents` array, and a process with no connection returns `{ "connected": false, "status": "disconnected" }`. See the [API reference](docs/api.md#health-endpoint).
 
 ## Architecture notes
 
@@ -528,15 +550,19 @@ npm run dev:prepare
 # Start dev server (requires NATS on localhost:4222)
 npm run dev
 
-# Type check
-npx tsc --noEmit
+# Lint and type check (module + playground)
+npm run lint
+npm run test:types
 
-# Run tests
-npm run test
+# Unit tests; integration tests need Docker (Testcontainers)
+npm test
+npm run test:integration
 
 # Build
 npm run prepack
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the pull request workflow and release steps.
 
 <!-- Badges -->
 [npm-version-src]: https://img.shields.io/npm/v/nuxt-nats/latest.svg?style=flat&colorA=020420&colorB=00DC82

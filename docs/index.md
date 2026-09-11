@@ -11,7 +11,7 @@ NATS JetStream integration for Nuxt 4. Server-side publish, typed consumers, KV 
 | [Getting Started](./guides/getting-started.md) | Install, minimal setup, first publish, health check |
 | [Authentication](./guides/auth.md) | JWT/NKey, token, user/pass, anonymous; priority order, `nsc` workflow, startup validation |
 | [Streams](./guides/streams.md) | Configure retention, storage, provisioning, deduplication |
-| [Consumers](./guides/consumers.md) | Durable pull consumers, ack patterns, DLQ, scaling |
+| [Consumers](./guides/consumers.md) | Durable pull consumers, declarative config, provisioning, ack patterns, dead-letter handling, scaling |
 | [KV Store](./guides/kv.md) | Key-value storage, watch, typed helpers |
 | [Object Store](./guides/object-store.md) | Blob storage, streaming upload/download |
 | [Agent Fabric](./guides/agents.md) | Host or call AI agents on the Synadia Agent Protocol over NATS |
@@ -50,10 +50,13 @@ nats: {
 // server/api/order.post.ts
 await jsPublish('orders.created', { id: '123', total: 99.99 }, { msgId: '123' })
 
-// server/workers/billing.ts  (NUXT_NATS_WORKERS=true)
-defineNatsConsumer({
-  stream: 'ORDERS', durable: 'billing',
-  async handler(msg, payload) { await process(payload); msg.ack() },
+// server/plugins/billing.ts  (consumes only when NUXT_NATS_WORKERS=true)
+export default defineNitroPlugin(() => {
+  defineNatsConsumer({
+    stream: 'ORDERS', durable: 'billing',
+    provision: 'startup',   // create the durable if it is missing
+    async handler(msg, payload) { await processOrder(payload); msg.ack() },
+  })
 })
 
 // server/api/config.ts
