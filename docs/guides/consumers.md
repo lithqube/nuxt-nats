@@ -4,27 +4,77 @@ A JetStream consumer is a stateful cursor into a stream. It tracks which message
 
 ## defineNatsConsumer
 
+Call it inside a **Nitro server plugin**. Nitro auto-registers `server/plugins/**`; it does
+not scan `server/workers/`, so a bare file there is never imported and the consumer never
+registers. (Before 0.1.0-beta.2 this guide showed `server/workers/billing.ts` directly,
+which silently did nothing unless something else imported it.)
+
 ```ts
-// server/workers/billing.ts
-defineNatsConsumer({
-  stream: 'ORDERS',
-  durable: 'billing',
+// server/plugins/billing.ts
+export default defineNitroPlugin(() => {
+  defineNatsConsumer({
+    stream: 'ORDERS',
+    durable: 'billing',
 
-  // Optional filters (subset of the stream's subjects)
-  filterSubjects: ['orders.paid', 'orders.refunded'],
+    // Describes the DURABLE, and is applied only when this call creates it
+    // (see `provision` below). When the durable already exists, a value here that
+    // disagrees with the live one is reported as a mismatch rather than applied:
+    // a consumer's filter is server-side state that binding cannot change.
+    filterSubjects: ['orders.paid', 'orders.refunded'],
 
-  ackWait: 30_000,       // ms before unacked message is redelivered. Default: 30s
-  maxDeliver: 5,         // max redelivery attempts before DLQ. Default: 5
-  backoff: [1000, 5000, 15_000, 60_000],  // per-redelivery delays in ms
+    ackPolicy: 'explicit',
+    ackWait: 30_000,       // ms before unacked message is redelivered. Default: 30s
+    maxDeliver: 5,         // max redelivery attempts before DLQ. Default: 5
+    backoff: [1000, 5000, 15_000, 60_000],  // per-redelivery delays in ms
 
-  deadLetterSubject: 'orders.dlq',  // subject for unprocessable messages
+    deadLetterSubject: 'orders.dlq',  // subject for unprocessable messages
 
-  async handler(msg, payload) {
-    await processBillingEvent(payload)
-    msg.ack()
-  },
+    // 'never' (default) binds to an existing durable and reports a clear error if it
+    // is missing. 'startup' creates it from the config above.
+    provision: 'never',
+
+    async handler(msg, payload) {
+      await processBillingEvent(payload)
+      msg.ack()
+    },
+  })
 })
 ```
+
+### Declaring consumers in `nuxt.config`
+
+Equivalent, with the handler in its own file. The module compiles these into a generated
+Nitro plugin at build time with each handler statically imported, which is what makes a
+module path work in a bundled server, and what makes `server/workers/` viable.
+
+```ts
+// nuxt.config.ts
+nats: {
+  consumers: [
+    {
+      stream: 'ORDERS',
+      durable: 'billing',
+      filterSubjects: ['orders.paid'],
+      deadLetterSubject: 'orders.dlq',
+      provision: 'startup',
+      handler: 'workers/billing',   // relative to server/, or absolute
+    },
+  ],
+}
+```
+
+```ts
+// server/workers/billing.ts
+import type { JsMsg } from '@nats-io/jetstream'
+
+export default async function (msg: JsMsg, payload: unknown) {
+  await processBillingEvent(payload)
+  msg.ack()
+}
+```
+
+A missing `stream`, `durable` or `handler` fails the build, as does declaring two consumers
+on one durable.
 
 ### Enabling consumers
 
@@ -65,6 +115,58 @@ If your handler calls `msg.ack()` but does not return (throws after ack), that i
 
 ## Dead-letter queue (DLQ)
 
+**NATS has no dead-letter queue.** Not in any released server, and not in 2.15-RC: there is
+no `dead_letter` field on a consumer and no ADR proposes one. When a message exhausts
+`max_deliver` the server discards it and publishes an advisory. Everything below is this
+module doing that work for you; `maxDeliver` on its own means "retry, then silently drop".
+
+There are two levels to it.
+
+**`deadLetterSubject` on your own consumer** covers the common case, described next: this
+module republishes the message before terminating it, so nothing is lost on a consumer you
+control.
+
+**`defineDeadLetterConsumer()`** covers the rest, including messages that died on consumers
+you do not own. It consumes the server's advisories from a stream:
+
+```ts
+// server/plugins/dead-letter.ts
+export default defineNitroPlugin(() => {
+  defineDeadLetterConsumer({
+    stream: 'JS_ADVISORY',        // a stream capturing the advisory subjects
+    durable: 'dead-letter-handler',
+    async onDeadLetter(event, msg) {
+      // event.message is the ORIGINAL, fetched by sequence from event.stream
+      await recordPoisonMessage({
+        kind: event.kind,         // 'max_deliver' | 'terminated'
+        consumer: event.consumer,
+        seq: event.streamSeq,
+        reason: event.reason,     // the msg.term(reason) string, when there was one
+        body: event.message?.data,
+      })
+      msg.ack()
+    },
+  })
+})
+```
+
+Provision the advisory stream over
+`$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>` and
+`$JS.EVENT.ADVISORY.CONSUMER.MSG_TERMINATED.>`.
+
+Two mistakes this avoids. Do not use `jsm.advisories()`: it subscribes to
+`$JS.EVENT.ADVISORY.>`, the whole-account firehose, which includes an audit advisory the
+server publishes on *every* JetStream API response. And do not use a plain core
+subscription: advisories are fire-and-forget, so anything published while your subscriber is
+redeploying is gone permanently. Consuming them from a stream is what makes the failure path
+as durable as the happy path.
+
+The advisory carries a sequence, not the message, so the original is fetched separately.
+That can legitimately return nothing once the message has aged out of its stream, in which
+case `event.message` is null and the handler still runs.
+
+### deadLetterSubject on your own consumer
+
 When a message exceeds `maxDeliver` attempts:
 
 1. The module publishes a JSON envelope to `deadLetterSubject`:
@@ -97,7 +199,13 @@ defineNatsConsumer({
 
 ## Consumer provisioning
 
-`defineNatsConsumer` expects the consumer to already exist on the NATS server. Create it via CLI:
+`defineNatsConsumer` binds to a durable. With the default `provision: 'never'` it does not
+create one, and a missing durable is reported once with the command that fixes it rather
+than retried silently. Pass `provision: 'startup'` to have the module create it from the
+declared config instead.
+
+When you own provisioning externally (recommended in production, since `'startup'` means
+every replica races to create the same definitions on boot), create it via CLI:
 
 ```bash
 nats consumer add ORDERS billing \
