@@ -48,7 +48,7 @@ await jsPublish('orders.created', {
   currency: 'USD',
 })
 
-// ✗ TypeScript error — 'orders.shipped' is not in NatsEvents
+// ✅ also compiles — 'orders.shipped' is not in NatsEvents, so the untyped overload takes it
 await jsPublish('orders.shipped', { id: 'ord_123' })
 
 // ✗ TypeScript error — missing required field 'currency'

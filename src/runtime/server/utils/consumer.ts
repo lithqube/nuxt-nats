@@ -49,28 +49,6 @@ interface ActiveConsumer {
 
 const _activeConsumers: ActiveConsumer[] = []
 
-/**
- * Register and start a durable pull consumer.
- * Only runs when NUXT_NATS_WORKERS=true to prevent long-lived consumers on serverless.
- *
- * Features:
- * - Auto-heartbeat via msg.working() to prevent redelivery on slow handlers
- * - DLQ routing when redelivery count exceeds maxDeliver
- * - Graceful stop via returned handle or global stopAllConsumers()
- *
- * @example
- *   defineNatsConsumer({
- *     stream: 'ORDERS',
- *     durable: 'billing',
- *     ackWait: 30_000,
- *     maxDeliver: 5,
- *     deadLetterSubject: 'orders.dlq',
- *     async handler(msg, payload) {
- *       await processOrder(payload)
- *       msg.ack()
- *     }
- *   })
- */
 /** Thrown when `provision: 'never'` and the durable does not exist on the server. */
 class ConsumerMissingError extends Error {
   constructor(stream: string, durable: string) {
@@ -166,6 +144,30 @@ async function ensureConsumer(cfg: {
   }
 }
 
+/**
+ * Register and start a durable pull consumer.
+ * Only runs when NUXT_NATS_WORKERS=true to prevent long-lived consumers on serverless.
+ *
+ * Features:
+ * - Binds to an existing durable, or creates it from this config with provision: 'startup'
+ * - Reports a filterSubjects mismatch against a live durable instead of ignoring it
+ * - Auto-heartbeat via msg.working() to prevent redelivery on slow handlers
+ * - DLQ routing on the maxDeliver-th delivery when deadLetterSubject is set
+ * - Graceful stop via returned handle or global stopAllConsumers()
+ *
+ * @example
+ *   defineNatsConsumer({
+ *     stream: 'ORDERS',
+ *     durable: 'billing',
+ *     ackWait: 30_000,
+ *     maxDeliver: 5,
+ *     deadLetterSubject: 'orders.dlq',
+ *     async handler(msg, payload) {
+ *       await processOrder(payload)
+ *       msg.ack()
+ *     }
+ *   })
+ */
 export function defineNatsConsumer<T = unknown>(opts: NatsConsumerOptions<T>): ActiveConsumer {
   if (process.env.NUXT_NATS_WORKERS !== 'true') {
     console.warn(`[nuxt-nats] Consumer "${opts.durable}" skipped — set NUXT_NATS_WORKERS=true to enable workers`)

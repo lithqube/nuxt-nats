@@ -49,19 +49,19 @@ export interface ConsumerDefinition {
 }
 
 export interface ModuleOptions {
-  /** NATS server URLs for TCP transport (Node / Bun). Default: ['nats://localhost:4222'] */
+  /** NATS server URLs for the TCP transport. Also used by the WebSocket transport when wsServers is empty. Default: ['nats://localhost:4222'] */
   servers?: string[]
-  /** NATS server URLs for WebSocket transport (edge / Cloudflare Workers). */
+  /** NATS server URLs for the WebSocket transport (Bun under 'auto', edge runtimes with 'ws'). */
   wsServers?: string[]
-  /** Transport selection. 'auto' uses TCP on Node, WS on edge. Default: 'auto' */
+  /** Transport selection. 'auto' uses WebSocket when running on Bun and TCP otherwise; set 'ws' for edge runtimes. Default: 'auto' */
   transport?: 'auto' | 'tcp' | 'ws'
   /** NATS auth token. Use NUXT_NATS_TOKEN env var in production. */
   token?: string
   /** NATS username for user/pass auth. */
   user?: string
-  /** NATS password for user/pass auth. Use NUXT_NATS_PASSWORD env var. */
+  /** NATS password for user/pass auth. Use NUXT_NATS_PASS env var. */
   pass?: string
-  /** Path to NKey seed file. Requires @nats-io/nkeys. */
+  /** NKey seed string (starts with "S"; not a file path). Use NUXT_NATS_NKEY_SEED env var. Signs the server nonce when userJwt is set; on its own it selects NKey auth. */
   nkeySeed?: string
   /** User JWT for auth against a JWT-resolver NATS server. Use alone for unsigned JWTs, or with nkeySeed for signed JWTs. */
   userJwt?: string
@@ -79,7 +79,6 @@ export interface ModuleOptions {
   jsApiPrefix?: string
   /** Stream definitions to provision on startup. */
   streams?: StreamDefinition[]
-  /** Declarative consumer definitions (runs only when NUXT_NATS_WORKERS=true). */
   /**
    * Consumers to register. Compiled into a generated Nitro plugin at build time, so the
    * handler modules are statically imported and survive bundling. Consumers start only

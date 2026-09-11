@@ -56,6 +56,40 @@ newest published, and `3.4.1-0` is documentation-only.
   `consumer_seq`; only `terminated` does.
 - **`msg.term(reason)` on the DLQ path.** Supported since client 3.4.0; the server carries
   the reason into the terminated advisory, so a dead message records why it died.
+- **`ackPolicy` on `defineNatsConsumer()`** (`'explicit' | 'none' | 'all'`, default
+  `'explicit'`). It was only on `ConsumerDefinition` before; like the other durable fields it is
+  applied when this call creates the durable.
+- **Dead-letter helpers**, auto-imported in `server/`: the `ADVISORY_MAX_DELIVERIES` and
+  `ADVISORY_MSG_TERMINATED` subject constants, `toDeadLetterEvent()` (the pure advisory-to-event
+  mapping), and the `DeadLetterEvent` / `DeadLetterConsumerOptions` types.
+
+### Changed
+
+- **`runtimeConfig.nats.consumers` is no longer populated.** `nats.consumers` now compiles into a
+  generated Nitro plugin at build time, and a second copy in `runtimeConfig` could only drift from
+  it. No module code read that copy before either.
+
+### Tests
+
+- 138 unit tests across 14 files (up from 94), 63 integration tests (unchanged)
+- New unit test files: `consumerTemplate.test.ts` (generated plugin source), `deadLetter.test.ts`
+  (advisory mapping and message recovery), `statusHandling.test.ts` (`onReconnect` once per
+  outage). `consumer.test.ts` extended for provisioning, filter mismatch, not-found detection and
+  one-shot missing-durable logging.
+
+### Docs
+
+- README: declarative consumers, consumer provisioning and dead-letter handling documented, and
+  the consumer example moved from `server/workers` to `server/plugins`. The configuration example
+  now lists every module option.
+- Consumers guide corrected (plugin placement, filter semantics, DLQ). It now states that
+  `deadLetterSubject` needs the durable's `max_deliver` to be at least `maxDeliver`, and replaces
+  the core-subscription alerting example with `defineDeadLetterConsumer()`.
+- API reference: `defineDeadLetterConsumer()` and its helpers, the `nats.consumers` option, and
+  the new consumer options. Architecture, docs index, deployment (shutdown order, Bun transport),
+  authentication (`AUTH ERROR` log format), CONTRIBUTING (beta release steps) and `CLAUDE.md`
+  brought up to date. Option JSDoc corrected: `nkeySeed` is the seed itself, not a file path, and
+  the password variable is `NUXT_NATS_PASS`.
 
 ### Notes
 

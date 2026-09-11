@@ -26,7 +26,7 @@ Until `1.0.0`, only the latest published version receives security fixes. After 
 
 In scope:
 - The `nuxt-nats` module source code (`src/`)
-- Documented public APIs (`jsPublish`, `corePublish`, `defineNatsConsumer`, `useKV`, `useObj`, health endpoint, module options)
+- Documented public APIs (`jsPublish`, `corePublish`, `defineNatsConsumer`, `defineDeadLetterConsumer`, `useEphemeralConsumer`, `useNatsHooks`, `useKV`, `useObj`, `defineNatsAgent`, `useAgents`, health endpoint, module options including the declarative `consumers` code generator)
 
 Out of scope:
 - Vulnerabilities in upstream `@nats-io/*` packages — please report those to https://github.com/nats-io/nats.js

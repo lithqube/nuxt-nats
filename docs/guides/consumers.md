@@ -90,7 +90,7 @@ Without this variable, `defineNatsConsumer` logs a warning and returns a no-op. 
 
 For each message pulled from the stream:
 
-1. **DLQ check:** If `msg.info.deliveryCount >= maxDeliver` and `deadLetterSubject` is set, the message is published to the DLQ subject via `jsPublish` and `msg.term()` is called (permanently removes from stream). Handler is not called.
+1. **DLQ check:** If `msg.info.deliveryCount >= maxDeliver` and `deadLetterSubject` is set, the message is published to the DLQ subject via `jsPublish` and terminated with `msg.term(reason)`: it is not redelivered, and the server publishes a `MSG_TERMINATED` advisory carrying the reason. Handler is not called.
 
 2. **Heartbeat timer:** A `setInterval` calls `msg.working()` every `ackWait / 2` ms while the handler runs. This resets the server-side ack timer, preventing redelivery for slow handlers.
 
@@ -112,6 +112,8 @@ msg.working()   // extend ackWait — called automatically by the heartbeat time
 ```
 
 If your handler calls `msg.ack()` but does not return (throws after ack), that is fine — the ack is already sent. Avoid calling multiple ack methods on the same message.
+
+`msg.term()` takes an optional reason (`msg.term('invalid payload')`, client 3.4.0+). The server records it in the `MSG_TERMINATED` advisory, and `defineDeadLetterConsumer()` surfaces it as `event.reason`.
 
 ## Dead-letter queue (DLQ)
 
@@ -167,19 +169,23 @@ case `event.message` is null and the handler still runs.
 
 ### deadLetterSubject on your own consumer
 
-When a message exceeds `maxDeliver` attempts:
+When a message arrives for its `maxDeliver`-th delivery (`msg.info.deliveryCount >= maxDeliver`):
 
 1. The module publishes a JSON envelope to `deadLetterSubject`:
 
 ```json
 {
   "originalSubject": "orders.paid",
-  "deliveryCount": 4,
+  "deliveryCount": 5,
   "data": "{\"id\":\"123\",\"total\":99.99}"
 }
 ```
 
-2. `msg.term()` is called — the message is permanently removed from the consumer.
+2. `msg.term(reason)` is called — the message is not redelivered to this consumer, and the server publishes a `MSG_TERMINATED` advisory whose `reason` reads `nuxt-nats: maxDeliver 5 exhausted, routed to orders.dlq`.
+
+If the publish to `deadLetterSubject` fails, the error is logged and the message is terminated anyway; the `MSG_TERMINATED` advisory is then the only record of it, which is one more reason to run `defineDeadLetterConsumer()` alongside.
+
+The routing happens in the client, on the `maxDeliver`-th delivery. If the durable's server-side `max_deliver` is lower than `maxDeliver`, the server stops redelivering first and the message never reaches `deadLetterSubject`. A durable created with `provision: 'startup'` gets `max_deliver` equal to `maxDeliver`; for one you provision yourself, keep `--max-deliver` at or above it.
 
 To process DLQ messages, create a separate consumer on a stream that captures `orders.dlq`:
 
@@ -276,37 +282,19 @@ nats consumer info ORDERS billing
 
 ### JetStream advisory subjects
 
-NATS publishes real-time events on `$JS.EVENT.ADVISORY.>`. Subscribe to these for alerting:
+NATS publishes real-time events on `$JS.EVENT.ADVISORY.>`. For a quick look from the CLI:
 
 ```bash
-# Monitor max-delivery exhaustions (messages going to DLQ)
+# Messages the server dropped after exhausting max_deliver
 nats sub '$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.ORDERS.billing'
 
-# Monitor all advisories
-nats sub '$JS.EVENT.ADVISORY.>'
+# Messages ended with msg.term(), including those this module routed to deadLetterSubject
+nats sub '$JS.EVENT.ADVISORY.CONSUMER.MSG_TERMINATED.ORDERS.billing'
 ```
 
-Wire advisory subscriptions in a worker plugin for application-level alerting:
+Avoid subscribing to all of `$JS.EVENT.ADVISORY.>` beyond a quick look: it includes an audit advisory for every JetStream API response.
 
-```ts
-// server/plugins/nats-advisories.ts
-export default defineNitroPlugin(() => {
-  const nc = useNats()
-
-  nc.subscribe('$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>', {
-    callback: (err, msg) => {
-      if (err) return
-      const advisory = JSON.parse(msg.string())
-      console.error('[dlq-alert] max deliveries exceeded', {
-        stream: advisory.stream,
-        consumer: advisory.consumer,
-        seq: advisory.stream_seq,
-      })
-      // Notify PagerDuty / Slack here
-    },
-  })
-})
-```
+For application-level alerting, use [`defineDeadLetterConsumer()`](#dead-letter-queue-dlq) rather than a core subscription. Advisories are fire-and-forget, so a core subscriber misses everything published while the worker is down or redeploying; a stream keeps them until your handler acks.
 
 ### Consumer lag alert
 

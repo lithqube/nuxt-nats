@@ -193,9 +193,9 @@ spec:
                   key: token
 ```
 
-Set `terminationGracePeriodSeconds` higher for workers than for the app — workers need time to finish in-flight message handlers before SIGKILL. The `preStop` sleep of 5 seconds gives the load balancer time to stop routing new traffic before SIGTERM arrives.
+Set `terminationGracePeriodSeconds` higher for workers than for the app so the connection drain has room to finish before SIGKILL. The `preStop` sleep of 5 seconds gives the load balancer time to stop routing new traffic before SIGTERM arrives.
 
-The module registers `process.once('SIGTERM')` which calls `nc.drain()` and `process.exit(0)`. The drain flushes all in-flight publishes and waits for the consumer loop to idle. Total shutdown time = preStop (5s) + drain time ≤ terminationGracePeriodSeconds.
+On `SIGTERM` (or `SIGINT`) the module stops agents, stops the consumer loops, calls `nc.drain()`, then `process.exit(0)`. The drain flushes pending publishes and acks before closing the connection. It does not wait for handlers that are still running: a message whose handler has not acked by the time the connection closes is redelivered after `ackWait`, so handlers should be idempotent. Total shutdown time = preStop (5s) + drain time ≤ terminationGracePeriodSeconds.
 
 ## Vercel / Netlify (serverless)
 
@@ -234,10 +234,14 @@ Bundle size: `@nats-io/nats-core` alone must fit within the Workers bundle limit
 
 ## Bun
 
-Bun's Node.js compatibility layer supports `net.Socket`, so `@nats-io/transport-node` works. The module auto-detects Bun via `globalThis.Bun` and falls back to WebSocket transport — you can override this with `transport: 'tcp'` to force TCP:
+Bun's Node.js compatibility layer supports `net.Socket`, so `@nats-io/transport-node` works. Under the default `transport: 'auto'`, though, the module detects Bun via `globalThis.Bun` and uses the WebSocket transport, connecting to `wsServers` (or to `servers` when `wsServers` is empty). Either point it at a WebSocket listener, or force TCP:
 
 ```bash
-NUXT_NATS_SERVERS=nats://localhost:4222 bun .output/server/index.mjs
+# WebSocket (the 'auto' default on Bun) — the NATS server needs a websocket {} block
+NUXT_NATS_WS_SERVERS=ws://localhost:8080 bun .output/server/index.mjs
+
+# TCP
+NUXT_NATS_TRANSPORT=tcp NUXT_NATS_SERVERS=nats://localhost:4222 bun .output/server/index.mjs
 ```
 
 Bun's reliable SIGTERM handling means the graceful drain is more predictable than Node.js in some configurations.
