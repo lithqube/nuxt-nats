@@ -87,18 +87,18 @@ Pre-releases have shipped under the `beta` dist-tag since 0.1.0-beta.1. There is
    npm publish --tag beta
    ```
 
-3. Tag the merge commit and push the tag:
+3. Point `latest` at the new version. `latest` has tracked the newest beta since 0.1.0-beta.1, so a plain `npm install nuxt-nats` installs it, but `npm publish --tag beta` does not move it:
+
+   ```bash
+   npm dist-tag add nuxt-nats@0.1.0-beta.N latest
+   ```
+
+4. Tag the merge commit and push the tag:
 
    ```bash
    git tag -a v0.1.0-beta.N -m "v0.1.0-beta.N"
    git push origin v0.1.0-beta.N
    ```
-
-Since 0.1.0-beta.1, `latest` has also pointed at the newest beta, so a plain `npm install nuxt-nats` installs it. `npm publish --tag beta` does not move `latest`; if it should follow, move it explicitly:
-
-```bash
-npm dist-tag add nuxt-nats@0.1.0-beta.N latest
-```
 
 ### Alpha release (retired)
 
