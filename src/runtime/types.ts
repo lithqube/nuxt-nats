@@ -1,4 +1,5 @@
-// Re-export the NatsEvents interface so user apps can augment it:
+// Public runtime types, re-exported from the package entry by src/module.ts. That re-export
+// is what makes the documented augmentation reach the interface jsPublish reads:
 //
 //   declare module 'nuxt-nats' {
 //     interface NatsEvents {

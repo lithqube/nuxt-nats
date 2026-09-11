@@ -309,13 +309,15 @@ function jsPublish<S extends keyof NatsEvents>(
   opts?: PublishOpts,
 ): Promise<void>
 
-// Untyped overload (any subject)
-function jsPublish(
-  subject: string,
+// Untyped overload (a subject not declared in NatsEvents, or a `string`-typed subject)
+function jsPublish<S extends string>(
+  subject: S extends keyof NatsEvents ? never : S,
   payload: Record<string, unknown> | unknown[] | string | number | boolean | null,
   opts?: PublishOpts,
 ): Promise<void>
 ```
+
+A declared subject is accepted only with its declared payload: the untyped overload maps it to `never`, so a mismatched payload is a type error rather than a silent fallback.
 
 **PublishOpts:**
 
@@ -578,10 +580,12 @@ function stopAllAgents(): Promise<void>
 
 ## NatsEvents (interface)
 
-Empty interface exported from `nuxt-nats`. Augment it in your application to enable typed subjects on `jsPublish`.
+Empty interface exported from `nuxt-nats`, and auto-imported as a type in `server/`. Augment it to enable typed subjects on `jsPublish`, from a `.d.ts` file under `server/` or `shared/` that starts with the `import type` line:
 
 ```ts
-// types/nats.d.ts
+// server/types/nats.d.ts
+import type {} from 'nuxt-nats'
+
 declare module 'nuxt-nats' {
   interface NatsEvents {
     'orders.created': { id: string; total: number }
@@ -589,7 +593,7 @@ declare module 'nuxt-nats' {
 }
 ```
 
-See [Typed Events guide](./guides/typed-events.md) for full usage.
+See the [Typed Events guide](./guides/typed-events.md) for why the file needs that import, and for full usage.
 
 ---
 

@@ -50,6 +50,13 @@ newest published, and `3.4.1-0` is documentation-only.
 - **The README documented `server/workers/*.ts` for consumers.** Nitro does not scan that
   directory, so those files were never imported. Documented as `server/plugins`, and the
   new declarative form makes `server/workers` viable via generated imports.
+- **Typed subjects never type-checked a payload.** Two faults, either one enough on its
+  own. `nuxt-nats` did not export `NatsEvents`, so the documented
+  `declare module 'nuxt-nats'` declared a new interface that `jsPublish` never read. And the
+  untyped `jsPublish` overload accepted a declared subject whenever the typed overload
+  rejected its payload. `NatsEvents` is now re-exported from the package entry, and the
+  fallback rejects declared subjects. Covered by type-level tests in `test/types/`, which
+  run as part of `npm test`.
 
 ### Added
 
@@ -71,6 +78,9 @@ newest published, and `3.4.1-0` is documentation-only.
 - **Dead-letter helpers**, auto-imported in `server/`: the `ADVISORY_MAX_DELIVERIES` and
   `ADVISORY_MSG_TERMINATED` subject constants, `toDeadLetterEvent()` (the pure advisory-to-event
   mapping), and the `DeadLetterEvent` / `DeadLetterConsumerOptions` types.
+- **`NatsConsumerOptions` importable from `nuxt-nats`**, alongside `NatsEvents`, and
+  **`ActiveConsumer` exported** (auto-imported in `server/`). `ActiveConsumer` is the handle
+  `defineNatsConsumer()` and `defineDeadLetterConsumer()` return.
 
 ### Changed
 
@@ -101,6 +111,10 @@ newest published, and `3.4.1-0` is documentation-only.
   authentication (`AUTH ERROR` log format), CONTRIBUTING (beta release steps) and `CLAUDE.md`
   brought up to date. Option JSDoc corrected: `nkeySeed` is the seed itself, not a file path, and
   the password variable is `NUXT_NATS_PASS`.
+- Typed events: declare `NatsEvents` in a `.d.ts` file under `server/` or `shared/` that starts
+  with `import type {} from 'nuxt-nats'`. The previous example, a root `types/nats.d.ts` with no
+  import, replaced the `nuxt-nats` module instead of extending it, and Nuxt 4's server tsconfig
+  does not include a root `types/` folder.
 
 ### Notes
 

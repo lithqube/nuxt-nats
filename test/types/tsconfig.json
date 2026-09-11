@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ESNext", "DOM"],
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    // Resolve the package name to the module source, so these tests do not depend on a build.
+    "paths": {
+      "nuxt-nats": ["../../src/module"]
+    }
+  },
+  "include": ["./**/*.test-d.ts"]
+}

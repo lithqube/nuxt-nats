@@ -371,10 +371,12 @@ See the [Agent Fabric guide](docs/guides/agents.md) for mid-stream human-in-the-
 
 ### Typed subjects
 
-Augment the `NatsEvents` interface to get full type safety across all `jsPublish` calls:
+Augment the `NatsEvents` interface to get full type safety across all `jsPublish` calls. Put the declaration in a `.d.ts` file under `server/` (or `shared/` if app code needs the types too), starting with the `import type` line:
 
 ```ts
-// types/nats.d.ts
+// server/types/nats.d.ts
+import type {} from 'nuxt-nats'
+
 declare module 'nuxt-nats' {
   interface NatsEvents {
     'orders.created': { id: string; total: number }
@@ -389,7 +391,10 @@ Now `jsPublish` is typed per subject:
 ```ts
 await jsPublish('orders.created', { id: '123', total: 99.99 })  // ✅
 await jsPublish('orders.created', { id: '123', foo: 'bar' })    // ✗ type error
+await jsPublish('metrics.pageview', { path: '/home' })          // ✅ not declared, so untyped
 ```
+
+Undeclared subjects and `string`-typed subjects still compile, so you can adopt this one subject at a time. The [Typed Events guide](docs/guides/typed-events.md) explains why the file location and that import matter.
 
 ## Configuration
 
