@@ -462,7 +462,7 @@ function defineDeadLetterConsumer(opts: DeadLetterConsumerOptions): ActiveConsum
 | `provision` | `'startup' \| 'never'` | `'never'` | As for `defineNatsConsumer` |
 | `ackWait` | `number` | `30_000` | Ms |
 | `recoverMessage` | `boolean` | `true` | Fetch the original message by sequence before calling the handler. Set `false` to skip the round trip when the metadata is enough |
-| `onDeadLetter` | `(event: DeadLetterEvent, msg: JsMsg) => Promise<void>` | required | Called once per advisory. Ack `msg` yourself; a handler that throws is nak'd and redelivered |
+| `onDeadLetter` | `(event: DeadLetterEvent, msg: JsMsg) => Promise<void>` | required | Called at least once per advisory: a handler that throws is nak'd and the advisory redelivered, and so is one that has not acked when the process stops. Ack `msg` yourself, and keep side effects idempotent |
 
 There is deliberately no `deadLetterSubject` here: routing a failing dead-letter handler into another dead-letter subject builds a loop.
 

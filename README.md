@@ -269,11 +269,13 @@ advisory is the only signal you get.
 
 `deadLetterSubject` on a consumer covers the common case: on the `maxDeliver`-th delivery
 this module republishes the message to that subject, then terminates it with a reason, which
-the server records in a `MSG_TERMINATED` advisory. The durable's own `max_deliver` must be at
-least `maxDeliver` (or unlimited), otherwise the server gives up first and the republish never
-happens; under `provision: 'startup'` the module creates the durable with `max_deliver` set to
-`maxDeliver`. For everything else, including messages that died on consumers you do not own,
-consume the advisories directly:
+the server records in a `MSG_TERMINATED` advisory. If the republish still fails after
+`jsPublish`'s retries, the failure is logged and the message is terminated anyway, so that
+advisory is its only record. The durable's own `max_deliver` must be at least `maxDeliver` (or
+unlimited), otherwise the server gives up first and the republish never happens; under
+`provision: 'startup'` the module creates the durable with `max_deliver` set to `maxDeliver`.
+For everything else, including messages that died on consumers you do not own, consume the
+advisories directly:
 
 ```ts
 // nuxt.config.ts — capture advisories into a stream you own
