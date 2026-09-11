@@ -43,7 +43,12 @@ export interface NatsConsumerOptions<T = unknown> {
   handler: (msg: JsMsg, payload: T) => Promise<void>
 }
 
-interface ActiveConsumer {
+/**
+ * Handle returned by defineNatsConsumer() and defineDeadLetterConsumer(). Exported so
+ * declaration emit can name it: without the export, building deadLetter.d.ts failed with
+ * TS4058 and `npm run prepack` exited 1.
+ */
+export interface ActiveConsumer {
   stop: () => void
 }
 
