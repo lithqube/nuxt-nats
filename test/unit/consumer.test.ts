@@ -28,6 +28,15 @@ vi.mock('../../src/runtime/server/utils/publish', () => ({
   corePublish: vi.fn(),
 }))
 
+// The JetStream client the connection plugin publishes. defineNatsConsumer() waits for it
+// before its first pass, because Nitro does not await async plugins. Most tests start with it
+// present; the startup tests clear it to model a consumer registered from a plugin while the
+// connection is still being established, and put it back when done.
+const connection = vi.hoisted(() => ({ js: {} as unknown }))
+vi.mock('../../src/runtime/server/plugins/_connection', () => ({
+  getJetStream: () => connection.js,
+}))
+
 type MockMsg = ReturnType<typeof makeMsg>
 
 function makeMsg(overrides: Partial<{
@@ -579,6 +588,83 @@ describe('defineNatsConsumer', () => {
 
       const msg = errSpy.mock.calls.flat().join(' ')
       expect(msg).not.toContain('filter mismatch')
+    })
+  })
+
+  /**
+   * Nitro calls server plugins without awaiting async ones, so a consumer declared in a
+   * server/plugins/ file, generated from nats.consumers, or set up by
+   * defineDeadLetterConsumer() is registered while the connection plugin is still
+   * connecting. The loop used to call useJetStream() before anything else, which threw; the
+   * async IIFE rejected unhandled and the consumer never started.
+   */
+  describe('registered before the connection exists', () => {
+    it('waits for the JetStream client, then binds and consumes', async () => {
+      vi.useFakeTimers()
+      const rejections: unknown[] = []
+      const onRejection = (reason: unknown) => {
+        rejections.push(reason)
+      }
+      process.on('unhandledRejection', onRejection)
+      try {
+        connection.js = undefined
+        const handler = vi.fn().mockImplementation(async (msg: any) => { msg.ack() })
+        const handleRef: { current?: { stop: () => void } } = {}
+        const { consumer } = setupJsMock([makeMsg()], handleRef)
+        // Behave like the real accessor: throw until the connection plugin publishes a client.
+        const jsDouble = { consumers: { get: vi.fn().mockResolvedValue(consumer) } }
+        vi.mocked(useJetStream).mockImplementation(() => {
+          if (!connection.js) throw new Error('[nuxt-nats] JetStream client is not available.')
+          return jsDouble as any
+        })
+
+        const handle = defineNatsConsumer({ stream: 'ORDERS', durable: 'billing', handler })
+        handleRef.current = handle
+
+        // Several poll intervals with no client: nothing touches JetStream and nothing throws.
+        await vi.advanceTimersByTimeAsync(1_000)
+        expect(useJetStream).not.toHaveBeenCalled()
+        expect(consumer.consume).not.toHaveBeenCalled()
+
+        // The connection plugin finishes connecting.
+        connection.js = {}
+        await vi.advanceTimersByTimeAsync(500)
+
+        expect(consumer.consume).toHaveBeenCalled()
+        expect(handler).toHaveBeenCalledOnce()
+        expect(rejections).toEqual([])
+        handle.stop()
+      }
+      finally {
+        process.off('unhandledRejection', onRejection)
+        connection.js = {}
+        vi.useRealTimers()
+      }
+    })
+
+    it('stop() while still waiting ends the loop without touching JetStream', async () => {
+      vi.useFakeTimers()
+      try {
+        connection.js = undefined
+        const handleRef: { current?: { stop: () => void } } = {}
+        const { consumer } = setupJsMock([makeMsg()], handleRef)
+
+        const handle = defineNatsConsumer({ stream: 'ORDERS', durable: 'billing', handler: vi.fn() })
+        handleRef.current = handle
+        await vi.advanceTimersByTimeAsync(500)
+        handle.stop()
+
+        // The connection arrives after the consumer was stopped.
+        connection.js = {}
+        await vi.advanceTimersByTimeAsync(1_000)
+
+        expect(useJetStream).not.toHaveBeenCalled()
+        expect(consumer.consume).not.toHaveBeenCalled()
+      }
+      finally {
+        connection.js = {}
+        vi.useRealTimers()
+      }
     })
   })
 })

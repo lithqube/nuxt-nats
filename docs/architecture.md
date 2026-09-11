@@ -40,7 +40,7 @@ Runs at **build time** inside Nuxt's module system. Responsibilities:
 
 - Merge `ModuleOptions` from `nuxt.config.ts` into `runtimeConfig.nats` (private, server-only)
 - Register the connection plugin via `addServerPlugin()`
-- When `nats.consumers` is non-empty, generate a second Nitro plugin (`nats-consumers.mjs`, built by `src/consumerTemplate.ts`) that statically imports each handler and calls `defineNatsConsumer()` for it, registered after the connection plugin. Invalid definitions fail the build, and the array is deliberately not copied into `runtimeConfig`
+- When `nats.consumers` is non-empty, generate a second Nitro plugin (`nats-consumers.mjs`, built by `src/consumerTemplate.ts`) that statically imports each handler and calls `defineNatsConsumer()` for it, registered after the connection plugin. Relative handler paths resolve against `nuxt.options.serverDir`. Invalid definitions fail the build, and the array is deliberately not copied into `runtimeConfig`
 - Register server util auto-imports via `addServerImportsDir()`
 - Register the health endpoint via `addServerHandler()`, unless `health.enabled` is `false`
 - Mark NATS and Synadia packages as Nitro externals so native TCP sockets survive bundling
@@ -51,12 +51,11 @@ Runs **once per server process** when Nitro boots. Responsibilities:
 
 - Log a warning or error when the user JWT is close to expiry or already expired (`validateJwt()`)
 - Establish a singleton `NatsConnection` (TCP via `@nats-io/transport-node`, or WS via `wsconnect`) with the auth method `buildAuthOptions()` selects
-- Instantiate `JetStreamClient` and `JetStreamManager` from the connection
-- Provision declared streams whose `provision` is `'startup'` or `'update'`
+- Create the `JetStreamClient` and `JetStreamManager`, provision declared streams whose `provision` is `'startup'` or `'update'`, and only then publish the client and manager singletons
 - Watch connection status: log disconnect / reconnect / error events (auth failures with an `AUTH ERROR` prefix) and fire the `useNatsHooks()` callbacks, with `onReconnect` gated to once per outage
 - Register graceful shutdown on the Nitro `close` hook **and** `process.once('SIGTERM'/'SIGINT')`
 
-Nitro calls server plugins in registration order but does not await async ones, so every later plugin, including the generated consumers plugin and your own `server/plugins/`, starts while this one is still connecting. Code that runs at plugin time cannot assume the connection exists; `defineNatsAgent()` waits for it before registering.
+Nitro calls server plugins in registration order but does not await async ones, so every later plugin, including the generated consumers plugin and your own `server/plugins/`, starts while this one is still connecting. Code that runs at plugin time cannot assume the connection exists. `defineNatsAgent()` waits for the connection, and `defineNatsConsumer()` (and so `defineDeadLetterConsumer()` and `nats.consumers`) waits for the JetStream client, which is published only after streams are provisioned.
 
 ### 3. Server utils (`src/runtime/server/utils/`)
 
@@ -96,9 +95,10 @@ Nitro boot (plugins are called in order; async ones are not awaited)
        └─ status() iterator starts (background)
        └─ jetstream() + jetstreamManager()
        └─ provisionStreams() [provision: 'startup' | 'update']
+       └─ JetStream client + manager published   ← waiting consumers start here
        └─ Nitro 'close' hook + SIGTERM / SIGINT handlers registered
   └─ generated nats-consumers.mjs plugin [if nats.consumers is set]
-       └─ defineNatsConsumer() per entry
+       └─ defineNatsConsumer() per entry, each waiting for the JetStream client
   └─ your server/plugins/**
 
 Per request

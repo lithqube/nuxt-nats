@@ -133,13 +133,16 @@ export default defineNitroPlugin(async (nitroApp) => {
   const jsOptsArg = Object.keys(jsOpts).length ? jsOpts : undefined
   const js = jetstream(nc, jsOptsArg)
   const jsm = await jetstreamManager(nc, jsOptsArg)
-  setJetStream(js)
-  setJetStreamManager(jsm)
 
-  // Provision streams declared with provision: 'startup'
+  // Provision declared streams BEFORE publishing the JetStream singletons. Consumers
+  // registered at plugin time wait for getJetStream() (Nitro does not await async plugins),
+  // so publishing first would let a consumer with provision: 'startup' look up its durable
+  // on a stream that does not exist yet and log a spurious loop error on first boot.
   if (config.streams?.length) {
     await provisionStreams(jsm, config.streams)
   }
+  setJetStream(js)
+  setJetStreamManager(jsm)
 
   // Graceful shutdown via Nitro hook
   nitroApp.hooks.hook('close', async () => {

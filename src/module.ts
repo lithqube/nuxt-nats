@@ -145,7 +145,11 @@ export default defineNuxtModule<ModuleOptions>({
     // Deliberately not mirrored into runtimeConfig: the generated plugin is the single
     // source of truth, and a second copy could only ever drift from it.
     if (options.consumers?.length) {
-      const serverDir = join(nuxt.options.srcDir, 'server')
+      // Handler paths are relative to the server directory. Not `<srcDir>/server`: in Nuxt 4
+      // srcDir is app/ whenever that directory exists, while server/ stays at the root. A path
+      // that does not resolve only warns at build time, then crashes every process at startup
+      // with ERR_MODULE_NOT_FOUND.
+      const serverDir = nuxt.options.serverDir
       const generated = addTemplate({
         filename: 'nats-consumers.mjs',
         write: true,
