@@ -10,6 +10,11 @@ import {
 import { defu } from 'defu'
 import { generateConsumerPlugin } from './consumerTemplate'
 
+// Public runtime types. The published types entry (dist/types.d.mts) re-exports only what
+// this file exports, so without this line `declare module 'nuxt-nats' { interface NatsEvents
+// {...} }` declared a new, unrelated interface and jsPublish never saw the user's subjects.
+export type { NatsEvents, NatsConsumerOptions } from './runtime/types'
+
 export interface StreamDefinition {
   name: string
   subjects: string[]

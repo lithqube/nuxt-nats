@@ -40,8 +40,15 @@ export async function jsPublish<S extends keyof NatsEvents>(
   payload: NatsEvents[S],
   opts?: PublishOpts,
 ): Promise<void>
-export async function jsPublish(
-  subject: string,
+/**
+ * Untyped fallback, for subjects not declared in NatsEvents and for `string`-typed subjects.
+ *
+ * A declared subject resolves to `never` here. Without that, a call whose payload did not
+ * match the declared type failed the overload above and then matched this one (AnyPayload
+ * admits any object), so a typed subject never rejected a wrong payload.
+ */
+export async function jsPublish<S extends string>(
+  subject: S extends keyof NatsEvents ? never : S,
   payload: AnyPayload,
   opts?: PublishOpts,
 ): Promise<void>

@@ -123,9 +123,12 @@ NATS has no dead-letter queue; the `MAX_DELIVERIES` / `MSG_TERMINATED` advisorie
 
 ### Typed subjects
 
-`NatsEvents` is a module-augmentation interface in `src/runtime/server/utils/publish.ts`. Consumers augment it in their app:
+`NatsEvents` is a module-augmentation interface declared in `src/runtime/server/utils/publish.ts` and re-exported from the package entry by `src/module.ts` (via `src/runtime/types.ts`). That re-export is load-bearing: `@nuxt/module-builder` builds `dist/types.d.mts` only from what `module.ts` exports, and without it `declare module 'nuxt-nats'` declared a new interface `jsPublish` never read. Apps augment it from a `.d.ts` module that the server tsconfig includes (`server/` or `shared/`; a root `types/` folder is outside Nuxt 4's `tsconfig.server.json`):
 
 ```ts
+// server/types/nats.d.ts
+import type {} from 'nuxt-nats' // makes this a module AND loads the package; `export {}` alone misses jsPublish unless something else imports 'nuxt-nats'
+
 declare module 'nuxt-nats' {
   interface NatsEvents {
     'orders.created': { id: string; total: number }
@@ -133,7 +136,7 @@ declare module 'nuxt-nats' {
 }
 ```
 
-`jsPublish('orders.created', payload)` is then fully typed. Unregistered subjects fall through to the `string` overload. Caveat: that overload also accepts registered subjects, so a wrong payload for a declared subject currently compiles through the fallback.
+`jsPublish` has two overloads. The untyped fallback's subject parameter is `S extends keyof NatsEvents ? never : S`, so a declared subject can only use the typed overload, while undeclared literals and `string`-typed subjects still fall through. Type-level tests are `test/types/*.test-d.ts`, run by `npm test` through vitest typecheck with `test/types/tsconfig.json`, which maps `nuxt-nats` to `src/module`. That mapping cannot see a packaging regression in `dist/types.d.mts`: when changing what `module.ts` exports, run `npm run prepack` and type-check an augmentation against the built `dist/` as well.
 
 `jsPublish` accepts `traceId` and `correlationId` in `PublishOpts` — these set `X-Trace-Id` and `X-Correlation-Id` headers and take precedence over the same keys in `headers`. `msgId` still wins over everything for deduplication.
 
