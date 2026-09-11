@@ -98,7 +98,6 @@ interface NatsRuntimeConfig {
   jsApiPrefix: string
   tls?: { caFile?: string, certFile?: string, keyFile?: string }
   streams: StreamDefinition[]
-  consumers: unknown[]
   health: { enabled?: boolean, endpoint?: string }
 }
 
@@ -159,13 +158,32 @@ export default defineNitroPlugin(async (nitroApp) => {
   process.once('SIGINT', () => shutdown('SIGINT'))
 })
 
-function handleStatus(s: Status) {
+/**
+ * True between a 'disconnect' status and the 'reconnect' that resolves it.
+ *
+ * The client emits a `reconnect` status per RETRY ATTEMPT, not per actual recovery
+ * (nats.js#423, where one outage produced roughly 2400 of them). Firing onReconnect on
+ * each would turn a single outage into a stampede for anyone using the hook to re-warm a
+ * cache, flip a health flag or re-provision. Gating on the disconnect -> reconnect
+ * transition collapses that to one event per real recovery.
+ */
+let _wasDisconnected = false
+
+/** Exported for tests only, mirroring the _fire* convention in useNatsHooks. */
+export function _resetStatusStateForTests() {
+  _wasDisconnected = false
+}
+
+export function handleStatus(s: Status) {
   const server = (s as { server?: string }).server ?? ''
   if (s.type === 'disconnect') {
     console.warn('[nuxt-nats] Disconnected from NATS:', server)
+    _wasDisconnected = true
     _fireDisconnect(server)
   }
   else if (s.type === 'reconnect') {
+    if (!_wasDisconnected) return
+    _wasDisconnected = false
     console.log('[nuxt-nats] Reconnected to NATS:', server)
     _fireReconnect(server)
   }

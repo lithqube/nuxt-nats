@@ -1,11 +1,26 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-import { useJetStream } from '../../src/runtime/server/utils/useJetStream'
+import { useJetStream, useJetStreamManager } from '../../src/runtime/server/utils/useJetStream'
 import { jsPublish } from '../../src/runtime/server/utils/publish'
 import { defineNatsConsumer, stopAllConsumers } from '../../src/runtime/server/utils/consumer'
+import { JetStreamApiError } from '@nats-io/jetstream'
+
+/**
+ * The real client rejects consumers.info() with a typed JetStreamApiError carrying
+ * err_code 10014, not a bare Error. ensureConsumer() treats only that as absence, so the
+ * double has to produce the real shape or it exercises a case that cannot happen.
+ *
+ * JetStreamApiError, not ConsumerNotFoundError: the subclass exists in the type
+ * declarations but is NOT a runtime export of '@nats-io/jetstream', so constructing it
+ * throws a TypeError that then fails the not-found check for the wrong reason.
+ */
+function consumerNotFound() {
+  return new JetStreamApiError({ code: 404, err_code: 10014, description: 'consumer not found' })
+}
 
 vi.mock('../../src/runtime/server/utils/useJetStream', () => ({
   useJetStream: vi.fn(),
+  useJetStreamManager: vi.fn(),
 }))
 
 vi.mock('../../src/runtime/server/utils/publish', () => ({
@@ -67,7 +82,34 @@ function setupJsMock(messages: MockMsg[], handleRef: { current?: { stop: () => v
   vi.mocked(useJetStream).mockReturnValue({
     consumers: { get: vi.fn().mockResolvedValue(consumer) },
   } as any)
+  // ensureConsumer() runs before consumers.get(), so every test needs a JSM. Default to
+  // "the durable already exists", which is the pre-existing behaviour these tests assert.
+  setupJsmMock()
   return { consumer, iterStop }
+}
+
+/**
+ * JSM mock for ensureConsumer(). `existing` is the live consumer info, or null to simulate
+ * a durable that has not been created yet.
+ */
+function setupJsmMock(existing: unknown = { config: {} }) {
+  // Model the server, not a static stub: once add() succeeds, info() starts answering.
+  // A mock that rejects info() forever makes the consumer loop re-create on every pass
+  // and turns a correct implementation into a failing assertion.
+  let created: unknown = existing
+  const info = vi.fn().mockImplementation(() =>
+    created === null
+      ? Promise.reject(consumerNotFound())
+      : Promise.resolve(created),
+  )
+  const add = vi.fn().mockImplementation((_stream: string, cfg: Record<string, unknown>) => {
+    created = { config: cfg }
+    return Promise.resolve(created)
+  })
+  vi.mocked(useJetStreamManager).mockReturnValue({
+    consumers: { info, add },
+  } as any)
+  return { info, add }
 }
 
 function wait(ms = 200) {
@@ -344,6 +386,199 @@ describe('defineNatsConsumer', () => {
       expect(error).toHaveBeenCalledWith(expect.stringContaining('loop error'), consumeErr)
 
       handle.stop()
+    })
+  })
+
+  /**
+   * Regressions for the three options that used to be accepted and never read.
+   * Before this, filterSubjects was destructured nowhere, defineNatsConsumer could only
+   * bind to a durable someone else had created, and a missing one produced an endless
+   * "loop error, retrying in 5s" that read like a network fault.
+   */
+  describe('consumer provisioning and filter honesty', () => {
+    it('creates the durable from the declared config when provision is \'startup\'', async () => {
+      const handleRef: { current?: { stop: () => void } } = {}
+      setupJsMock([], handleRef)
+      const { add } = setupJsmMock(null)
+
+      const handle = defineNatsConsumer({
+        stream: 'ORDERS',
+        durable: 'billing',
+        filterSubjects: ['orders.created'],
+        ackWait: 30_000,
+        maxDeliver: 5,
+        provision: 'startup',
+        handler: vi.fn(),
+      })
+      handleRef.current = handle
+      await wait()
+      handle.stop()
+
+      expect(add).toHaveBeenCalledOnce()
+      const [streamArg, cfg] = add.mock.calls[0]! as [string, Record<string, unknown>]
+      expect(streamArg).toBe('ORDERS')
+      expect(cfg).toMatchObject({
+        durable_name: 'billing',
+        filter_subject: 'orders.created',
+        max_deliver: 5,
+        // ms -> ns. Passing the ms value straight through would make ack_wait 30us.
+        ack_wait: 30_000_000_000,
+      })
+    })
+
+    it('uses filter_subjects (plural) when more than one subject is declared', async () => {
+      const handleRef: { current?: { stop: () => void } } = {}
+      setupJsMock([], handleRef)
+      const { add } = setupJsmMock(null)
+
+      const handle = defineNatsConsumer({
+        stream: 'ORDERS',
+        durable: 'billing',
+        filterSubjects: ['orders.created', 'orders.updated'],
+        provision: 'startup',
+        handler: vi.fn(),
+      })
+      handleRef.current = handle
+      await wait()
+      handle.stop()
+
+      const [, cfg] = add.mock.calls[0]! as [string, Record<string, unknown>]
+      expect(cfg.filter_subjects).toEqual(['orders.created', 'orders.updated'])
+      expect(cfg.filter_subject).toBeUndefined()
+    })
+
+    it('does NOT create the durable by default, and says what to do instead', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const handleRef: { current?: { stop: () => void } } = {}
+      setupJsMock([], handleRef)
+      const { add } = setupJsmMock(null)
+
+      const handle = defineNatsConsumer({
+        stream: 'ORDERS',
+        durable: 'billing',
+        handler: vi.fn(),
+      })
+      handleRef.current = handle
+      await wait()
+      handle.stop()
+
+      expect(add).not.toHaveBeenCalled()
+      const msg = errSpy.mock.calls.flat().join(' ')
+      expect(msg).toContain('does not exist on stream')
+      expect(msg).toContain('provision: \'startup\'')
+    })
+
+    it('reports a missing durable once, not on every retry', async () => {
+      // Fake timers, because the retry delay is 5s and the previous version of this test
+      // waited 300ms in real time. It never reached a second retry, so it passed just as
+      // happily with the one-shot guard removed: it proved nothing.
+      //
+      // advanceTimersByTimeAsync in bounded steps rather than runAllTimersAsync, which
+      // would spin forever against this consumer's `while (!stopped)` loop.
+      vi.useFakeTimers()
+      try {
+        const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const handleRef: { current?: { stop: () => void } } = {}
+        setupJsMock([], handleRef)
+        setupJsmMock(null)
+
+        const missingLogs = () => errSpy.mock.calls
+          .flat()
+          .filter(a => typeof a === 'string' && a.includes('does not exist on stream'))
+
+        const handle = defineNatsConsumer({ stream: 'ORDERS', durable: 'billing', handler: vi.fn() })
+        handleRef.current = handle
+
+        // First pass: ensureConsumer throws, the message is logged, a 5s retry is queued.
+        await vi.advanceTimersByTimeAsync(50)
+        expect(missingLogs()).toHaveLength(1)
+
+        // Second and third passes: same failure, and it must stay quiet.
+        await vi.advanceTimersByTimeAsync(5_000)
+        await vi.advanceTimersByTimeAsync(5_000)
+        expect(missingLogs()).toHaveLength(1)
+
+        handle.stop()
+      }
+      finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('rethrows a non-not-found error instead of reading it as an absent durable', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const handleRef: { current?: { stop: () => void } } = {}
+      setupJsMock([], handleRef)
+
+      // A permissions failure, not a missing consumer. Treating every rejection as absence
+      // would create the durable under 'startup', or tell the operator to create one that
+      // already exists under 'never'. Both point at the wrong problem.
+      const add = vi.fn()
+      vi.mocked(useJetStreamManager).mockReturnValue({
+        consumers: {
+          info: vi.fn().mockRejectedValue(
+            new JetStreamApiError({ code: 403, err_code: 10052, description: 'permissions violation' }),
+          ),
+          add,
+        },
+      } as any)
+
+      const handle = defineNatsConsumer({
+        stream: 'ORDERS',
+        durable: 'billing',
+        provision: 'startup',
+        handler: vi.fn(),
+      })
+      handleRef.current = handle
+      await wait()
+      handle.stop()
+
+      expect(add).not.toHaveBeenCalled()
+      const msg = errSpy.mock.calls.flat().join(' ')
+      expect(msg).toContain('loop error')
+      expect(msg).not.toContain('does not exist on stream')
+    })
+
+    it('flags a filter mismatch against the live durable', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const handleRef: { current?: { stop: () => void } } = {}
+      setupJsMock([], handleRef)
+      setupJsmMock({ config: { filter_subject: 'orders.shipped' } })
+
+      const handle = defineNatsConsumer({
+        stream: 'ORDERS',
+        durable: 'billing',
+        filterSubjects: ['orders.created'],
+        handler: vi.fn(),
+      })
+      handleRef.current = handle
+      await wait()
+      handle.stop()
+
+      const msg = errSpy.mock.calls.flat().join(' ')
+      expect(msg).toContain('filter mismatch')
+      expect(msg).toContain('orders.shipped')
+    })
+
+    it('stays quiet when the declared filter matches the live durable', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const handleRef: { current?: { stop: () => void } } = {}
+      setupJsMock([], handleRef)
+      setupJsmMock({ config: { filter_subjects: ['orders.updated', 'orders.created'] } })
+
+      const handle = defineNatsConsumer({
+        stream: 'ORDERS',
+        durable: 'billing',
+        // Same set, different order — order is not meaningful for a filter set.
+        filterSubjects: ['orders.created', 'orders.updated'],
+        handler: vi.fn(),
+      })
+      handleRef.current = handle
+      await wait()
+      handle.stop()
+
+      const msg = errSpy.mock.calls.flat().join(' ')
+      expect(msg).not.toContain('filter mismatch')
     })
   })
 })

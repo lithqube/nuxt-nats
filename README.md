@@ -173,29 +173,159 @@ Multiple `useNatsHooks()` calls accumulate — all registered callbacks are call
 
 ### Consumers
 
-Workers run only when `NUXT_NATS_WORKERS=true`. This prevents long-lived consumers from starting in serverless or stateless environments.
+Workers run only when `NUXT_NATS_WORKERS=true`. This prevents long-lived consumers from starting in serverless or stateless environments. Without it the consumer logs a skip warning and the app publishes but consumes nothing.
+
+Declare consumers in a **Nitro server plugin**. Nitro auto-registers `server/plugins/**`; it does not scan `server/workers/`, so a file there is never imported and the consumer never registers.
 
 ```ts
-// server/workers/billing.ts
+// server/plugins/billing.ts
+export default defineNitroPlugin(() => {
+  defineNatsConsumer({
+    stream: 'ORDERS',
+    durable: 'billing',
+    filterSubjects: ['orders.created'],
+    ackWait: 30_000,
+    maxDeliver: 5,
+    deadLetterSubject: 'orders.dlq',
+
+    async handler(msg, payload) {
+      await processBillingEvent(payload)
+      msg.ack()
+    },
+  })
+})
+```
+
+#### The durable has to exist
+
+`defineNatsConsumer` binds to a durable, it does not create one by default, because a consumer's config is server-side state that usually belongs in IaC. Pass `provision: 'startup'` when you want the module to create it from the declared config instead:
+
+```ts
 defineNatsConsumer({
   stream: 'ORDERS',
   durable: 'billing',
-  ackWait: 30_000,
-  maxDeliver: 5,
-  deadLetterSubject: 'orders.dlq',
-
-  async handler(msg, payload) {
-    await processBillingEvent(payload)
-    msg.ack()
-  },
+  filterSubjects: ['orders.created'],
+  provision: 'startup',   // create it if missing; default is 'never'
+  async handler(msg) { msg.ack() },
 })
 ```
+
+Under the default `provision: 'never'`, a missing durable is reported once with an actionable error rather than retried silently.
+
+`filterSubjects`, `ackPolicy`, `ackWait` and `maxDeliver` describe the durable and are applied only when this call creates it. When the durable already exists, a declared `filterSubjects` that disagrees with the live one is reported as a mismatch: binding cannot change a server-side filter, so the consumer receives the live set.
+
+> **`nats.consumers` in `nuxt.config` is not implemented.** It never started a consumer, and a non-empty array now fails the build rather than doing so silently. Use `defineNatsConsumer()` as above.
 
 ```bash
 NUXT_NATS_WORKERS=true node .output/server/index.mjs
 ```
 
 > **Tip:** For production, run the Nuxt server (publisher) and a separate worker process (consumers) as distinct deployments. Workers need a persistent Node.js or Bun runtime — not serverless.
+
+### Declarative consumers in `nuxt.config`
+
+As an alternative to `defineNatsConsumer()`, declare consumers in config. The module
+compiles them into a Nitro plugin at build time, statically importing each handler, so this
+works with a bundled server and with files under `server/workers/` that Nitro does not scan.
+
+```ts
+// nuxt.config.ts
+nats: {
+  consumers: [
+    {
+      stream: 'ORDERS',
+      durable: 'billing',
+      filterSubjects: ['orders.created'],
+      ackPolicy: 'explicit',
+      ackWait: 30_000,
+      maxDeliver: 5,
+      deadLetterSubject: 'orders.dlq',
+      provision: 'startup',
+      handler: 'workers/billing',   // relative to server/, or absolute
+    },
+  ],
+}
+```
+
+```ts
+// server/workers/billing.ts
+import type { JsMsg } from '@nats-io/jetstream'
+
+export default async function (msg: JsMsg, payload: unknown) {
+  await processBillingEvent(payload)
+  msg.ack()
+}
+```
+
+A missing `stream`, `durable` or `handler` fails the build, as does declaring two consumers
+on the same durable. Consumers still start only when `NUXT_NATS_WORKERS=true`.
+
+### Dead-letter handling
+
+**NATS has no dead-letter queue.** Not in any released server, and not in 2.15-RC. When a
+message exhausts `max_deliver` the server drops it and publishes an advisory, and that
+advisory is the only signal you get.
+
+`deadLetterSubject` on a consumer covers the common case: this module republishes the
+message to that subject before terminating it. For everything else, including messages that
+died on consumers you do not own, consume the advisories directly:
+
+```ts
+// nuxt.config.ts — capture advisories into a stream you own
+nats: {
+  streams: [
+    {
+      name: 'JS_ADVISORY',
+      subjects: [
+        '$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>',
+        '$JS.EVENT.ADVISORY.CONSUMER.MSG_TERMINATED.>',
+      ],
+      retention: 'limits',
+      storage: 'file',
+      maxAge: '30d',
+      provision: 'startup',
+    },
+  ],
+}
+```
+
+```ts
+// server/plugins/dead-letter.ts
+export default defineNitroPlugin(() => {
+  defineDeadLetterConsumer({
+    stream: 'JS_ADVISORY',
+    durable: 'dead-letter-handler',
+    provision: 'startup',
+    async onDeadLetter(event, msg) {
+      // event.message is the ORIGINAL, fetched by sequence from event.stream
+      await recordPoisonMessage({
+        kind: event.kind,               // 'max_deliver' | 'terminated'
+        stream: event.stream,
+        consumer: event.consumer,
+        seq: event.streamSeq,
+        reason: event.reason,           // the msg.term(reason) string, when there was one
+        body: event.message?.data,
+      })
+      msg.ack()
+    },
+  })
+})
+```
+
+Two mistakes this exists to avoid. Do not use `jsm.advisories()`: it subscribes to
+`$JS.EVENT.ADVISORY.>`, the whole-account firehose, which includes an audit advisory
+published on *every* JetStream API response. And do not use a plain core subscription:
+advisories are fire-and-forget, so anything published while your subscriber is redeploying
+is gone permanently. Consuming them from a stream is what makes the failure path as durable
+as the happy path.
+
+The advisory carries a stream sequence, not the message, so the original is fetched by
+sequence. That can legitimately return nothing if the message has already aged out of its
+stream, in which case `event.message` is null and the handler still runs.
+
+`MaxDeliverAdvisory` and `TerminatedAdvisory` are exported. The client types
+`Advisory.data` as `unknown` and ships no payload types, so these are declared here. Note
+`max_deliver` has no `consumer_seq`; only `terminated` does.
 
 ### Agent Fabric (Synadia Agent Protocol)
 

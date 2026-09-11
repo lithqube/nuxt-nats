@@ -1,11 +1,14 @@
+import { join, isAbsolute } from 'node:path'
 import {
   addServerImportsDir,
   addServerPlugin,
   addServerHandler,
+  addTemplate,
   createResolver,
   defineNuxtModule,
 } from '@nuxt/kit'
 import { defu } from 'defu'
+import { generateConsumerPlugin } from './consumerTemplate'
 
 export interface StreamDefinition {
   name: string
@@ -33,7 +36,15 @@ export interface ConsumerDefinition {
   maxDeliver?: number
   backoff?: number[]
   deadLetterSubject?: string
-  /** Path to the handler file (relative to server/ or absolute). */
+  /**
+   * 'never'   — bind to an existing durable; never create one. Default.
+   * 'startup' — create the durable from this definition if it does not exist.
+   */
+  provision?: 'startup' | 'never'
+  /**
+   * Path to the handler module, relative to `server/` or absolute. It must
+   * default-export `(msg, payload) => Promise<void>`.
+   */
   handler?: string
 }
 
@@ -69,6 +80,11 @@ export interface ModuleOptions {
   /** Stream definitions to provision on startup. */
   streams?: StreamDefinition[]
   /** Declarative consumer definitions (runs only when NUXT_NATS_WORKERS=true). */
+  /**
+   * Consumers to register. Compiled into a generated Nitro plugin at build time, so the
+   * handler modules are statically imported and survive bundling. Consumers start only
+   * when NUXT_NATS_WORKERS=true.
+   */
   consumers?: ConsumerDefinition[]
   health?: {
     /** Enable the /api/_nats/health endpoint. Default: true */
@@ -113,12 +129,34 @@ export default defineNuxtModule<ModuleOptions>({
       jsDomain: options.jsDomain ?? '',
       jsApiPrefix: options.jsApiPrefix ?? '',
       streams: options.streams,
-      consumers: options.consumers,
       health: options.health,
     })
 
     // Nitro plugin: manages connection lifecycle + SIGTERM drain
     addServerPlugin(resolver.resolve('./runtime/server/plugins/nats'))
+
+    // Declarative consumers are compiled into a generated Nitro plugin.
+    //
+    // Resolving ConsumerDefinition.handler at runtime is not possible in a bundled Nitro
+    // server, which is why this option previously did nothing at all: the array reached
+    // runtimeConfig and no code could act on it. Emitting static imports at build time is
+    // what makes it real. Registered AFTER the connection plugin so useJetStream() is
+    // available by the time a consumer starts.
+    //
+    // Deliberately not mirrored into runtimeConfig: the generated plugin is the single
+    // source of truth, and a second copy could only ever drift from it.
+    if (options.consumers?.length) {
+      const serverDir = join(nuxt.options.srcDir, 'server')
+      const generated = addTemplate({
+        filename: 'nats-consumers.mjs',
+        write: true,
+        getContents: () => generateConsumerPlugin(options.consumers!, {
+          consumerUtilPath: resolver.resolve('./runtime/server/utils/consumer'),
+          resolveHandler: (h: string) => (isAbsolute(h) ? h : join(serverDir, h)),
+        }),
+      })
+      addServerPlugin(generated.dst)
+    }
 
     // Auto-import server utils: useNats(), useJetStream(), useKV(), publish()
     addServerImportsDir(resolver.resolve('./runtime/server/utils'))

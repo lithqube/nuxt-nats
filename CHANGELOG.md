@@ -6,6 +6,69 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 ---
 
+## [0.1.0-beta.2] — 2026-09-11
+
+### Status
+
+Closes three API surfaces that accepted input and discarded it, and adds dead-letter
+handling. No dependency changes: all `@nats-io/*` packages are already at 3.4.0, the
+newest published, and `3.4.1-0` is documentation-only.
+
+### Fixed
+
+- **`nats.consumers` never started a consumer.** The array was copied into
+  `runtimeConfig` and no runtime code read it back, and `ConsumerDefinition.handler` (a
+  module path) was resolved nowhere. A declarative consumer block typechecked, deployed,
+  and consumed nothing, silently. It is now compiled into a generated Nitro plugin at
+  build time with each handler statically imported, which is what makes a module path
+  work in a bundled server.
+- **`filterSubjects` was accepted and never read.** `defineNatsConsumer` only called
+  `js.consumers.get()`, which binds to a durable whose filter is server-side state it
+  cannot change, so a consumer could name one subject in code and receive another. It is
+  now applied when this call creates the durable, and a declared filter that disagrees
+  with an existing durable is reported rather than ignored. `ackPolicy`, `ackWait` and
+  `maxDeliver` had the same problem.
+- **A missing durable was reported as a network fault**, logging
+  `loop error, retrying in 5s` every five seconds forever. It now reports once with the
+  `nats consumer add` command that fixes it.
+- **Every `consumers.info()` rejection was treated as "durable absent"**, so a
+  permissions or transport failure could create a consumer under `provision: 'startup'`
+  or produce a false missing-durable error. Only `JetStreamApiError` with
+  `JetStreamApiCodes.ConsumerNotFound` counts as absence now.
+- **`onReconnect` fired once per retry attempt rather than once per recovery**
+  (nats.js#423, where one outage produced roughly 2400 events). Now gated on the
+  disconnect to reconnect transition. `onDisconnect` is unchanged.
+- **The README documented `server/workers/*.ts` for consumers.** Nitro does not scan that
+  directory, so those files were never imported. Documented as `server/plugins`, and the
+  new declarative form makes `server/workers` viable via generated imports.
+
+### Added
+
+- **`provision` on consumers** (`'startup' | 'never'`, default `'never'`), mirroring
+  `StreamDefinition.provision`. Under `'startup'` the durable is created from the declared
+  config. The default preserves bind-only behaviour.
+- **`defineDeadLetterConsumer()`** for durable dead-letter handling. NATS has no
+  dead-letter queue in any released server or in 2.15-RC, so the advisory is the only
+  signal. This consumes `MAX_DELIVERIES` and `MSG_TERMINATED` advisories from a stream
+  rather than an ephemeral subscription, and recovers the original message by sequence.
+- **`MaxDeliverAdvisory` and `TerminatedAdvisory` types.** The client types
+  `Advisory.data` as `unknown` and ships no payload types. Note `max_deliver` carries no
+  `consumer_seq`; only `terminated` does.
+- **`msg.term(reason)` on the DLQ path.** Supported since client 3.4.0; the server carries
+  the reason into the terminated advisory, so a dead message records why it died.
+
+### Notes
+
+- `consumers.addOrUpdate` is unreleased upstream, and `ConsumerApiAction.CreateOrUpdate`
+  is unreachable in 3.4.0 because `cr.action = opts.action || Create` coerces the empty
+  string back to `"create"`. The info-then-add shape here is deliberate and mirrors the
+  future signature.
+- Migrating an existing durable from `filter_subject` to `filter_subjects` requires
+  delete-and-recreate: `update()` is a read-modify-write and the old scalar survives the
+  merge, colliding (nats.js#429).
+
+---
+
 ## [0.1.0-beta.1] — 2026-08-07
 
 ### Status: Production-validated
