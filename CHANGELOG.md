@@ -27,6 +27,8 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
   stream count, storage, required `max_bytes`) now log what to check.
 - A build warns when a credential (`creds`, `token`, `pass`, `nkeySeed`, `userJwt`) is set
   in `nuxt.config`, which writes it into the build output.
+- With `synadia` set, a build warns about provisioned streams without `maxBytes`, which
+  Synadia Cloud rejects.
 
 ### Fixed
 

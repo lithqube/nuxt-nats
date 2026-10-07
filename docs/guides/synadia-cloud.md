@@ -56,7 +56,8 @@ error when it has already expired.
 
 ## Streams on Cloud
 
-Plan limits apply to JetStream. The free plan allows R1 streams only and 10 streams per
+Every stream must set `maxBytes`: Cloud rejects a stream without it, and the build warns
+when `synadia` is set and a provisioned stream has none. Plan limits apply to JetStream. The free plan allows R1 streams only and 10 streams per
 account; higher plans add R3 and more streams. Declare placement with tags:
 
 ```ts

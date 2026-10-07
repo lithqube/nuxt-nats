@@ -128,6 +128,25 @@ describe('module setup — Synadia Cloud and creds', () => {
     expect(msg).not.toContain('SECRET')
   })
 
+  it('warns when a provisioned stream has no maxBytes on Synadia Cloud', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await run({
+      synadia: true,
+      streams: [
+        { name: 'A', subjects: ['a.>'], provision: 'startup' },
+        { name: 'B', subjects: ['b.>'], provision: 'startup', maxBytes: 1024 },
+        { name: 'C', subjects: ['c.>'] }, // not provisioned by the module
+      ],
+    })
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('requires maxBytes on every stream; set it on: A'))
+  })
+
+  it('does not warn about maxBytes off Synadia Cloud', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await run({ streams: [{ name: 'A', subjects: ['a.>'], provision: 'startup' }] })
+    expect(warnSpy).not.toHaveBeenCalled()
+  })
+
   it('does not warn in dev or when only a creds file path is set', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await run({ creds: 'SECRET-CREDS' }, true)

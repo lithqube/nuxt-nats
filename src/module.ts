@@ -157,6 +157,17 @@ export default defineNuxtModule<ModuleOptions>({
     const servers = options.servers ?? cloud?.servers ?? ['nats://localhost:4222']
     const wsServers = options.wsServers ?? cloud?.wsServers ?? []
 
+    // Synadia Cloud rejects a stream without max_bytes ("account requires a stream config to
+    // have max bytes set"), so catch it at build time rather than at the first boot.
+    if (options.synadia) {
+      const unbounded = (options.streams ?? [])
+        .filter(s => (s.provision === 'startup' || s.provision === 'update') && !(s.maxBytes && s.maxBytes > 0))
+        .map(s => s.name)
+      if (unbounded.length) {
+        console.warn(`[nuxt-nats] Synadia Cloud requires maxBytes on every stream; set it on: ${unbounded.join(', ')}`)
+      }
+    }
+
     // Values set in nuxt.config are serialized into the build output (.output), so a
     // credential there ships with every artifact. Runtime env vars do not.
     if (!nuxt.options.dev) {
