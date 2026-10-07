@@ -6,7 +6,7 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 ---
 
-## [Unreleased]
+## [0.1.0-beta.3] — 2026-10-07
 
 ### Changed
 
