@@ -54,3 +54,6 @@ coverage
 Network Trash Folder
 Temporary Items
 .apdisk
+
+# NATS credentials (live tests, scripts/synadia-creds.mjs)
+*.creds

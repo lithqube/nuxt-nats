@@ -8,11 +8,18 @@ import { parseCreds } from '../../src/runtime/server/utils/parseCreds'
 import { synadiaServers } from '../../src/synadia'
 import type { SynadiaRegion } from '../../src/synadia'
 
-// Opt-in: SYNADIA_LIVE=1 SYNADIA_CREDS_FILE=/path/to/user.creds npm run test:live
+// Opt-in, with either credential source:
+//   SYNADIA_LIVE=1 SYNADIA_CLOUD_TOKEN=uat_... SYNADIA_NATS_USER_ID=<id> npm run test:live
+//     fetches fresh creds for that NATS user from the Control Plane API and keeps them in
+//     memory (find the id with `node scripts/synadia-creds.mjs list`)
+//   SYNADIA_LIVE=1 SYNADIA_CREDS_FILE=/path/to/user.creds npm run test:live
 // Optional: SYNADIA_REGION (default global), SYNADIA_SUBJECT_PREFIX (default nuxtnats.live),
 // SYNADIA_STREAMS=1 to also create and delete an R1 stream (uses one of your plan's streams).
 // The user needs pub/sub on "<prefix>.>" and "_INBOX.>", plus $JS.API.> for the stream test.
-const enabled = process.env.SYNADIA_LIVE === '1' && !!process.env.SYNADIA_CREDS_FILE
+const env = process.env
+const viaToken = !!(env.SYNADIA_CLOUD_TOKEN && env.SYNADIA_NATS_USER_ID)
+const enabled = env.SYNADIA_LIVE === '1' && (viaToken || !!env.SYNADIA_CREDS_FILE)
+const apiUrl = (env.SYNADIA_API_URL ?? 'https://cloud.synadia.com/api').replace(/\/$/, '')
 const prefix = process.env.SYNADIA_SUBJECT_PREFIX ?? 'nuxtnats.live'
 const region = (process.env.SYNADIA_REGION ?? 'global') as SynadiaRegion
 
@@ -26,12 +33,27 @@ afterEach(async () => {
 
 describe.skipIf(!enabled)('Synadia Cloud (live)', () => {
   const { servers, wsServers } = synadiaServers(region)
-  const auth = () => buildAuthOptions({ ...none, credsFile: process.env.SYNADIA_CREDS_FILE })
+  // Creds contents (token path) or undefined (file path).
+  let creds: string | undefined
+  const auth = () => creds
+    ? buildAuthOptions({ ...none, creds })
+    : buildAuthOptions({ ...none, credsFile: env.SYNADIA_CREDS_FILE })
 
-  // Over TLS the client swallows an authenticator error and the server reports only an
-  // "Authentication Timeout" after ~15s, so check the creds file before connecting.
-  beforeAll(() => {
-    const path = process.env.SYNADIA_CREDS_FILE!
+  // Resolve and check the creds before connecting: over TLS the client swallows an
+  // authenticator error and the server reports only an "Authentication Timeout" after ~15s.
+  beforeAll(async () => {
+    if (viaToken) {
+      const res = await fetch(`${apiUrl}/core/beta/nats-users/${encodeURIComponent(env.SYNADIA_NATS_USER_ID!)}/creds`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${env.SYNADIA_CLOUD_TOKEN}`, Accept: 'text/plain' },
+      })
+      // Status only: the body is not needed to diagnose this and the token is never echoed.
+      if (!res.ok) throw new Error(`Control Plane creds request for SYNADIA_NATS_USER_ID failed: HTTP ${res.status}`)
+      creds = await res.text()
+      parseCreds(creds)
+      return
+    }
+    const path = env.SYNADIA_CREDS_FILE!
     let text: string
     try {
       text = readFileSync(path, 'utf8')
@@ -42,7 +64,7 @@ describe.skipIf(!enabled)('Synadia Cloud (live)', () => {
     parseCreds(text) // throws a clear error for a file that is not a .creds file
   })
 
-  it('connects over TLS with a creds file and round-trips a request', async () => {
+  it('connects over TLS with creds and round-trips a request', async () => {
     const nc = await connect({ servers, name: 'nuxt-nats-live-test', ...auth() })
     open.push(nc)
     const subject = `${prefix}.echo`
