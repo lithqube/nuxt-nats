@@ -1,4 +1,6 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -8,6 +10,7 @@ import { createOperator, createAccount, createUser, encodeOperator, encodeAccoun
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers'
 import { buildAuthOptions } from '../../src/runtime/server/utils/buildConnectionOptions'
 import { CredentialManager } from '../../src/runtime/server/credentials/manager'
+import { infisicalProvider } from '../../src/runtime/server/credentials/providers/infisical'
 
 interface JwtAuthTestContext {
   container: StartedTestContainer
@@ -295,5 +298,78 @@ describe('CredentialManager — rotating short-lived credentials against a JWT-r
 
     await manager.dispose()
     await nc.close()
+  }, 40_000)
+})
+
+describe('infisical provider — over real HTTP, rotating against a JWT-resolver NATS server', () => {
+  it('logs in, reads rotating creds and keeps the connection alive across expiries', async () => {
+    const TTL = 8
+    const seen = { logins: 0, reads: 0, badAuth: 0 }
+    // A stand-in for Infisical: universal-auth login and a v4 secret read, serving creds that
+    // a rotator would refresh (here: freshly issued on every read), stored base64.
+    const server = createServer(async (req, res) => {
+      const url = new URL(req.url!, 'http://x')
+      if (req.method === 'POST' && url.pathname === '/api/v1/auth/universal-auth/login') {
+        let body = ''
+        for await (const chunk of req) body += chunk
+        const { clientId, clientSecret } = JSON.parse(body)
+        if (clientId !== 'cid' || clientSecret !== 'csecret') {
+          res.writeHead(401).end()
+          return
+        }
+        seen.logins++
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ accessToken: 'at-1', expiresIn: 7200, tokenType: 'Bearer' }))
+        return
+      }
+      if (req.method === 'GET' && url.pathname === '/api/v4/secrets/NATS_CREDS') {
+        if (req.headers.authorization !== 'Bearer at-1' || url.searchParams.get('projectId') !== 'proj' || url.searchParams.get('environment') !== 'test') {
+          seen.badAuth++
+          res.writeHead(401).end()
+          return
+        }
+        seen.reads++
+        const creds = Buffer.from(await ctx.issueCreds(TTL)).toString('base64')
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ secret: { secretKey: 'NATS_CREDS', secretValue: creds } }))
+        return
+      }
+      res.writeHead(404).end()
+    })
+    await new Promise<void>(r => server.listen(0, '127.0.0.1', r))
+    const siteUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+
+    const manager = new CredentialManager(infisicalProvider({
+      siteUrl,
+      projectId: 'proj',
+      environment: 'test',
+      secretName: 'NATS_CREDS',
+      auth: { method: 'universal', clientId: 'cid', clientSecret: 'csecret' },
+    }), { leadRatio: 0.5, minLeadSec: 2, maxLeadSec: 10, maxBackoffSec: 2 })
+
+    try {
+      await manager.init()
+      const nc = await connect({
+        servers: [ctx.servers],
+        authenticator: manager.authenticator(),
+        ignoreAuthErrorAbort: true,
+        maxReconnectAttempts: -1,
+        reconnectTimeWait: 250,
+      })
+      manager.attach(() => nc.reconnect())
+      await new Promise(r => setTimeout(r, TTL * 2.5 * 1000))
+
+      expect(seen.logins).toBe(1) // the access token is cached across reads
+      expect(seen.reads).toBeGreaterThanOrEqual(3)
+      expect(seen.badAuth).toBe(0)
+      expect(nc.isClosed()).toBe(false)
+      const sub = nc.subscribe('jwt.infisical', { max: 1, callback: (_e, m) => { m.respond(m.data) } })
+      const reply = await nc.request('jwt.infisical', new TextEncoder().encode('ping'), { timeout: 3_000 })
+      sub.unsubscribe()
+      expect(new TextDecoder().decode(reply.data)).toBe('ping')
+      await nc.close()
+    }
+    finally {
+      await manager.dispose()
+      server.close()
+    }
   }, 40_000)
 })

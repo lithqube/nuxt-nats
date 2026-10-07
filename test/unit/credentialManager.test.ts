@@ -2,8 +2,10 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { createUser } from '@nats-io/nkeys'
 import {
   CredentialManager,
+  getCredentialManager,
   normalizeCredentials,
   refreshDelayMs,
+  setCredentialManager,
 } from '../../src/runtime/server/credentials/manager'
 import { CredentialsProviderError } from '../../src/runtime/server/credentials/types'
 import type { NatsCredentials, NatsCredentialsProvider } from '../../src/runtime/server/credentials/types'
@@ -268,5 +270,142 @@ describe('CredentialManager', () => {
     await vi.advanceTimersByTimeAsync(60_000)
     expect(p.fetch).toHaveBeenCalledTimes(1)
     expect(dispose).toHaveBeenCalledOnce()
+  })
+})
+
+describe('CredentialManager — failure and lifecycle edges', () => {
+  it('stops init when disposed mid-retry', async () => {
+    vi.useFakeTimers()
+    const m = new CredentialManager(queueProvider(new Error('down')))
+    const done = m.init().catch(e => e)
+    await vi.advanceTimersByTimeAsync(10)
+    await m.dispose()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect((await done).message).toMatch(/disposed during init/)
+  })
+
+  it('reports the generic code when a provider throws a plain error', async () => {
+    vi.useFakeTimers()
+    const m = new CredentialManager(queueProvider(new Error('boom')), { initTimeoutSec: 1 })
+    const done = m.init().catch(e => e)
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(await done).toMatchObject({ code: 'error' })
+    await m.dispose()
+  })
+
+  it('marks credentials expired when a refresh fails after expiry, and wraps non-Error throws', async () => {
+    const exp = nowSec() + 3600
+    const onError = vi.fn()
+    let n = 0
+    const m = new CredentialManager({
+      name: 'test',
+      fetch: async () => {
+        if (n++ === 0) return { creds: creds(jwt({ exp })) }
+        throw 'string failure'
+      },
+    }, {}, { onError })
+    await m.init()
+    vi.useFakeTimers({ now: (exp + 10) * 1000 })
+    expect(await m.refreshNow('scheduled')).toBe(false)
+    expect(m.snapshot().status).toBe('expired')
+    expect(onError.mock.calls[0]![0]).toBeInstanceOf(Error)
+    expect(onError.mock.calls[0]![0].message).toBe('string failure')
+    await m.dispose()
+  })
+
+  it('returns false for refreshes after dispose', async () => {
+    const p = queueProvider({ creds: creds(jwt({})) })
+    const m = new CredentialManager(p)
+    await m.init()
+    await m.dispose()
+    expect(await m.refreshNow('scheduled')).toBe(false)
+    expect(p.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('logs (does not throw) when the provider dispose fails', async () => {
+    const errSpy = vi.mocked(console.error)
+    const m = new CredentialManager({ name: 'test', fetch: async () => ({ userJwt: jwt({}) }), dispose: () => {
+      throw new Error('dispose eyJa.eyJb.sig failed')
+    } })
+    await m.dispose()
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Error disposing credentials provider "test"'))
+    expect(errSpy.mock.calls.at(-1)![0]).not.toContain('eyJa.eyJb.sig')
+  })
+
+  it('reconnects at most once per 30s when credentials keep changing', async () => {
+    let i = 0
+    const m = new CredentialManager({ name: 'test', fetch: async () => ({ creds: creds(jwt({ exp: nowSec() + 3600, jti: String(i++) })) }) })
+    await m.init()
+    const reconnect = vi.fn(async () => {})
+    m.attach(reconnect)
+    await m.refreshNow('scheduled')
+    await m.refreshNow('scheduled')
+    expect(reconnect).toHaveBeenCalledOnce()
+    await m.dispose()
+  })
+
+  it('logs a failed reconnect without throwing', async () => {
+    let i = 0
+    const m = new CredentialManager({ name: 'test', fetch: async () => ({ creds: creds(jwt({ exp: nowSec() + 3600, jti: String(i++) })) }) })
+    await m.init()
+    m.attach(() => Promise.reject(new Error('no server')))
+    await m.refreshNow('scheduled')
+    await new Promise(r => setTimeout(r, 0))
+    expect(vi.mocked(console.error)).toHaveBeenCalledWith(expect.stringContaining('Reconnect with refreshed credentials failed: no server'))
+    await m.dispose()
+  })
+
+  it('backs off exponentially after scheduled failures, capped at maxBackoffSec', async () => {
+    vi.useFakeTimers()
+    const p = queueProvider({ creds: creds(jwt({ iat: nowSec(), exp: nowSec() + 600 })) }, new Error('down'))
+    const m = new CredentialManager(p, { maxBackoffSec: 2 })
+    await m.init()
+    m.attach(async () => {})
+    await vi.advanceTimersToNextTimerAsync() // the scheduled refresh runs and fails
+    const count = () => p.fetch.mock.calls.length
+    const after1 = count()
+    // Retries 1s, 2s, then 2s (capped) after each failure.
+    for (const [gap, n] of [[1000, 1], [2000, 2], [2000, 3]] as const) {
+      await vi.advanceTimersByTimeAsync(gap - 1)
+      expect(count()).toBe(after1 + n - 1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(count()).toBe(after1 + n)
+    }
+    await m.dispose()
+  })
+
+  it('retries every second when attached before any credentials loaded', async () => {
+    vi.useFakeTimers()
+    const m = new CredentialManager(queueProvider({ creds: creds(jwt({})) }))
+    m.attach(async () => {})
+    expect(m.snapshot().nextRefreshInSec).toBe(1)
+    await m.dispose()
+  })
+
+  it('isolates a throwing hook', async () => {
+    const m = new CredentialManager(queueProvider({ creds: creds(jwt({})) }), {}, {
+      onRefreshed: () => {
+        throw new Error('hook bug')
+      },
+    })
+    await expect(m.init()).resolves.toBeUndefined()
+    expect(m.snapshot().status).toBe('ok')
+    await m.dispose()
+  })
+
+  it('treats 0 and unset refresh options as defaults (unset runtimeConfig values)', () => {
+    vi.useFakeTimers()
+    const m = new CredentialManager(queueProvider({ creds: creds(jwt({})) }), { pollSec: 0, minLeadSec: undefined })
+    m.attach(async () => {})
+    expect(m.snapshot().nextRefreshInSec).toBe(1)
+    void m.dispose()
+  })
+
+  it('exposes the active manager for the health endpoint', () => {
+    const m = new CredentialManager(queueProvider({ userJwt: jwt({}) }))
+    setCredentialManager(m)
+    expect(getCredentialManager()).toBe(m)
+    setCredentialManager(undefined)
+    expect(getCredentialManager()).toBeUndefined()
   })
 })

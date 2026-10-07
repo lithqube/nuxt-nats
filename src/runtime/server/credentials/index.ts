@@ -24,6 +24,9 @@ export interface CredentialsRuntimeConfig {
       clientSecret?: string
       tokenPath?: string
       jwt?: string
+      region?: string
+      audience?: string
+      managedIdentityClientId?: string
     }
   }
   synadia?: {
@@ -65,6 +68,9 @@ export function createCredentialsProvider(
         clientSecret: a.clientSecret,
         tokenPath: a.tokenPath,
         jwt: a.jwt,
+        region: a.region,
+        audience: a.audience,
+        managedIdentityClientId: a.managedIdentityClientId,
       },
     })
   }

@@ -187,7 +187,7 @@ describe('module setup — credentials providers', () => {
   it('pre-seeds every credentials leaf so NUXT_NATS_CREDENTIALS_* env vars map', async () => {
     const { nats } = await setup({})
     expect(nats.credentials.provider).toBe('')
-    expect(nats.credentials.infisical.auth).toEqual({ method: '', identityId: '', clientId: '', clientSecret: '', tokenPath: '', jwt: '' })
+    expect(nats.credentials.infisical.auth).toEqual({ method: '', identityId: '', clientId: '', clientSecret: '', tokenPath: '', jwt: '', region: '', audience: '', managedIdentityClientId: '' })
     expect(nats.credentials.synadia).toEqual({ apiUrl: '', userId: '', token: '' })
     expect(nats.credentials.refresh.initTimeoutSec).toBe(0)
   })

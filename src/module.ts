@@ -172,8 +172,12 @@ export interface CredentialsOptions {
     /** Secret holding the `.creds` file (raw or base64) or a bearer user JWT. */
     secretName?: string
     auth?: {
-      /** 'universal' (client id + secret), 'kubernetes' (pod service account) or 'oidc'. */
-      method?: 'universal' | 'kubernetes' | 'oidc'
+      /**
+       * 'kubernetes' (pod service account), 'aws' (IAM role: env, IRSA, ECS/Pod Identity or EC2),
+       * 'gcp' (metadata-server ID token), 'azure' (managed identity), 'oidc' (a platform OIDC
+       * token) or 'universal' (client id + secret, the only one with a stored secret).
+       */
+      method?: 'universal' | 'kubernetes' | 'oidc' | 'aws' | 'gcp' | 'azure'
       identityId?: string
       clientId?: string
       /** Env: NUXT_NATS_CREDENTIALS_INFISICAL_AUTH_CLIENT_SECRET */
@@ -182,6 +186,12 @@ export interface CredentialsOptions {
       tokenPath?: string
       /** Identity token value. Env: NUXT_NATS_CREDENTIALS_INFISICAL_AUTH_JWT */
       jwt?: string
+      /** aws: STS region. Default: AWS_REGION, AWS_DEFAULT_REGION, then EC2 metadata. */
+      region?: string
+      /** gcp: ID token audience (default identityId). azure: token resource (default https://management.azure.com/). */
+      audience?: string
+      /** azure: client id of a user-assigned managed identity. */
+      managedIdentityClientId?: string
     }
   }
   synadia?: {
@@ -307,6 +317,9 @@ export default defineNuxtModule<ModuleOptions>({
             clientSecret: options.credentials?.infisical?.auth?.clientSecret ?? '',
             tokenPath: options.credentials?.infisical?.auth?.tokenPath ?? '',
             jwt: options.credentials?.infisical?.auth?.jwt ?? '',
+            region: options.credentials?.infisical?.auth?.region ?? '',
+            audience: options.credentials?.infisical?.auth?.audience ?? '',
+            managedIdentityClientId: options.credentials?.infisical?.auth?.managedIdentityClientId ?? '',
           },
         },
         synadia: {

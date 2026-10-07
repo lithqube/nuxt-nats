@@ -10,6 +10,14 @@ export default defineConfig({
   },
   test: {
     exclude: ['test/integration/**', 'test/live/**', 'node_modules/**'],
+    // `npm run test:coverage`. Credentials code handles secrets and rotation, so it has a floor.
+    coverage: {
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.d.ts'],
+      thresholds: {
+        'src/runtime/server/credentials/**': { statements: 95, branches: 85, functions: 95, lines: 95 },
+      },
+    },
     // Type-level tests: test/types/*.test-d.ts are type-checked, never executed.
     typecheck: {
       enabled: true,

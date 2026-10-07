@@ -31,8 +31,8 @@ npm run test:types
 # Lint
 npm run lint
 
-# Coverage (requires @vitest/coverage-v8, already installed)
-npx vitest run --coverage
+# Coverage (thresholds on src/runtime/server/credentials/**)
+npm run test:coverage
 
 # Build the distributable module
 npm run prepack
@@ -115,7 +115,7 @@ Relative `handler` paths resolve against `nuxt.options.serverDir`, never `<srcDi
 
 `nats.credentials.provider` other than `static` puts a `CredentialManager` (`src/runtime/server/credentials/manager.ts`) in front of the connection. `nats.ts` awaits `manager.init()` before `connect()`, passes `manager.authenticator()` (reads the current creds on every reconnect) with `ignoreAuthErrorAbort: true` (otherwise two auth errors close the client for good), then `manager.attach(() => nc.reconnect())`. Refreshes are single-flight, scheduled at `exp − clamp(lifetime × leadRatio, minLeadSec, maxLeadSec)` ±10% jitter, and a changed fingerprint triggers a rate-limited reconnect. `handleStatus()` calls `refreshNow('auth-error')` on authorization / authentication-expired errors, not on permission violations. Provider errors are `CredentialsProviderError` (`{ provider, code, status }`) and never include response bodies; log through `describeError()` (`redact.ts`).
 
-The custom provider reaches `nats.ts` through the Nitro virtual module `#nuxt-nats/credentials-provider` (`src/providerTemplate.ts`, registered in `nitro:config`), imported statically because a generated plugin would run after the connect. It is bundled whenever `customProvider` is set. Unit tests alias that id to `test/fixtures/credentials/no-provider.ts` in `vitest.config.ts`. Infisical is called over REST, not `@infisical/sdk` (which pulls in the AWS SDK).
+The custom provider reaches `nats.ts` through the Nitro virtual module `#nuxt-nats/credentials-provider` (`src/providerTemplate.ts`, registered in `nitro:config`), imported statically because a generated plugin would run after the connect. It is bundled whenever `customProvider` is set. Unit tests alias that id to `test/fixtures/credentials/no-provider.ts` in `vitest.config.ts`. Infisical is called over REST, not `@infisical/sdk` (which pulls in the AWS SDK). Cloud identities live in `credentials/cloud/` (`aws.ts` resolves credentials like the AWS SDK chain and SigV4-signs `sts:GetCallerIdentity`; `gcp.ts`, `azure.ts` read metadata endpoints). `@smithy/signature-v4` is a devDependency only, as the reference signer in `test/unit/cloudIdentity.test.ts`. `npm run test:coverage` enforces a coverage floor on `src/runtime/server/credentials/**`.
 
 ### Dead-letter handling
 

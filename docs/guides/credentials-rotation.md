@@ -41,11 +41,17 @@ nats: {
 | `auth.method` | Proves identity with | Settings |
 |---|---|---|
 | `kubernetes` | the pod's service-account token (no stored secret) | `identityId`; `tokenPath` defaults to the in-pod token |
-| `oidc` | an OIDC token from your platform (GitHub Actions, GitLab, cloud workload identity) | `identityId` and `tokenPath` or `jwt` (`NUXT_NATS_CREDENTIALS_INFISICAL_AUTH_JWT`) |
-| `universal` | a client id and secret | `clientId`, `clientSecret` (`NUXT_NATS_CREDENTIALS_INFISICAL_AUTH_CLIENT_SECRET`) |
+| `aws` | the workload's IAM role: a SigV4-signed `sts:GetCallerIdentity` (no stored secret) | `identityId`; `region` (default `AWS_REGION`, `AWS_DEFAULT_REGION`, then EC2 metadata) |
+| `gcp` | an ID token from the GCP metadata server (no stored secret) | `identityId`; `audience` (default: `identityId`); or `jwt` / `tokenPath` for an IAM-signed JWT |
+| `azure` | a managed-identity token (no stored secret) | `identityId`; `audience` = resource (default `https://management.azure.com/`); `managedIdentityClientId` for a user-assigned identity |
+| `oidc` | an OIDC token from your platform (GitHub Actions, GitLab, Vercel) | `identityId` and `tokenPath` or `jwt` (`NUXT_NATS_CREDENTIALS_INFISICAL_AUTH_JWT`) |
+| `universal` | a client id and secret — the one method with a stored secret | `clientId`, `clientSecret` (`NUXT_NATS_CREDENTIALS_INFISICAL_AUTH_CLIENT_SECRET`) |
 
-AWS, GCP and Azure IAM login are planned; until then use `oidc` with your cloud's workload
-identity token, or `universal`.
+`aws` reads credentials the way the AWS SDK does, without depending on it: environment variables,
+then a web identity token (EKS IRSA), the container credentials endpoint (ECS, EKS Pod Identity),
+and the EC2 instance profile (IMDSv2). `azure` uses the App Service identity endpoint when
+`IDENTITY_ENDPOINT` is set, otherwise the instance metadata service (VMs, AKS). Metadata
+requests time out after 2 seconds so a misconfigured platform fails fast.
 
 ## Synadia Control Plane
 

@@ -259,6 +259,17 @@ describe('buildAuthOptions — creds (Synadia Cloud)', () => {
     expect(describeAuth({ ...none, creds })).toEqual({ mode: 'creds', jwt, source: 'NUXT_NATS_CREDS' })
   })
 
+  it('the creds-file authenticator reads the file on each call and signs the nonce', () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'nuxt-nats-')), 'u.creds')
+    writeFileSync(file, creds)
+    const { authenticator } = buildAuthOptions({ ...none, credsFile: file })
+    const auth = authenticator!('nonce') as { jwt: string, nkey: string, sig: string }
+    expect(auth.jwt).toBe(jwt)
+    expect(auth.sig).toBeTruthy()
+    writeFileSync(file, 'rotated: not a creds file')
+    expect(() => authenticator!('nonce')).toThrow(/NATS USER JWT/)
+  })
+
   it('describeAuth reads a creds file once', () => {
     const file = join(mkdtempSync(join(tmpdir(), 'nuxt-nats-')), 'u.creds')
     writeFileSync(file, creds)

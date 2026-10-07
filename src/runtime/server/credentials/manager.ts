@@ -142,7 +142,8 @@ export class CredentialManager {
     for (;;) {
       if (await this.refresh('initial')) return
       if (this.disposed) throw new Error('[nuxt-nats] credentials manager disposed during init')
-      if (Date.now() + delay > deadline) {
+      // A retry that would start at or past the deadline is not attempted.
+      if (Date.now() + delay >= deadline) {
         this.status = 'failed'
         throw new CredentialsProviderError(this.provider.name, this.lastErrorCode ?? 'unavailable', `no credentials after ${this.opts.initTimeoutSec}s`)
       }

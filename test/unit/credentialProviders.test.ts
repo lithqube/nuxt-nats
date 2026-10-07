@@ -5,8 +5,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { infisicalProvider, infisicalLoginBody, credentialsFromSecret } from '../../src/runtime/server/credentials/providers/infisical'
 import { synadiaProvider } from '../../src/runtime/server/credentials/providers/synadia'
 import { createCredentialsProvider } from '../../src/runtime/server/credentials'
-import { CredentialsProviderError } from '../../src/runtime/server/credentials/types'
-import { redact } from '../../src/runtime/server/credentials/redact'
+import { CredentialsProviderError, defineNatsCredentialsProvider } from '../../src/runtime/server/credentials/types'
+import { describeError, redact } from '../../src/runtime/server/credentials/redact'
+import { credentialRequest } from '../../src/runtime/server/credentials/http'
+import { jwtTimes } from '../../src/runtime/server/credentials/jwt'
 import { generateProviderModule, CREDENTIALS_PROVIDER_ID } from '../../src/providerTemplate'
 
 const signal = new AbortController().signal
@@ -77,20 +79,22 @@ describe('infisical provider', () => {
     expect(() => infisicalProvider({ ...base, auth: { method: 'universal', clientId: 'x' } })).toThrow(/clientId and clientSecret/)
     expect(() => infisicalProvider({ ...base, auth: { method: 'kubernetes' } })).toThrow(/needs identityId/)
     expect(() => infisicalProvider({ ...base, auth: { method: 'oidc', identityId: 'i' } })).toThrow(/jwt or tokenPath/)
+    expect(() => infisicalProvider({ ...base, auth: { method: 'aws' } })).toThrow(/aws auth needs identityId/)
+    expect(() => infisicalProvider({ ...base, auth: { method: 'ldap' as never } })).toThrow(/unknown auth method "ldap"/)
   })
 
-  it('builds kubernetes and oidc logins from a token file or value', () => {
+  it('builds kubernetes and oidc logins from a token file or value', async () => {
     const file = join(mkdtempSync(join(tmpdir(), 'nuxt-nats-')), 'token')
     writeFileSync(file, 'k8s-jwt\n')
-    expect(infisicalLoginBody({ method: 'kubernetes', identityId: 'id', tokenPath: file })).toEqual({
+    expect(await infisicalLoginBody({ method: 'kubernetes', identityId: 'id', tokenPath: file }, signal)).toEqual({
       path: '/api/v1/auth/kubernetes-auth/login',
       body: { identityId: 'id', jwt: 'k8s-jwt' },
     })
-    expect(infisicalLoginBody({ method: 'oidc', identityId: 'id', jwt: 'oidc-jwt' })).toEqual({
+    expect(await infisicalLoginBody({ method: 'oidc', identityId: 'id', jwt: 'oidc-jwt' }, signal)).toEqual({
       path: '/api/v1/auth/oidc-auth/login',
       body: { identityId: 'id', jwt: 'oidc-jwt' },
     })
-    expect(() => infisicalLoginBody({ method: 'kubernetes', identityId: 'id', tokenPath: '/nope' })).toThrow(/cannot read the identity token file/)
+    await expect(infisicalLoginBody({ method: 'kubernetes', identityId: 'id', tokenPath: '/nope' }, signal)).rejects.toThrow(/cannot read the identity token file/)
   })
 
   it('treats a bare JWT secret as a bearer user', () => {
@@ -166,5 +170,62 @@ describe('generateProviderModule', () => {
   it('exports undefined without a provider', () => {
     expect(generateProviderModule()).toBe('export default undefined\n')
     expect(CREDENTIALS_PROVIDER_ID).toBe('#nuxt-nats/credentials-provider')
+  })
+})
+
+describe('credentialRequest', () => {
+  const url = 'https://secrets.example.com/v1/x?token=abc'
+  it.each([[404, 'not-found'], [429, 'rate-limited'], [500, 'http-error']])('maps HTTP %i to %s', async (status, code) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status })))
+    await expect(credentialRequest('p', url, { signal })).rejects.toMatchObject({ code, status })
+  })
+
+  it('reports a network failure by host, not by URL', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')))
+    const err = await credentialRequest('p', url, { signal }).catch(e => e)
+    expect(err).toMatchObject({ code: 'network' })
+    expect(err.message).toContain('secrets.example.com')
+    expect(err.message).not.toContain('token=abc')
+  })
+
+  it('reports a timeout', async () => {
+    const ac = new AbortController()
+    ac.abort()
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('aborted', 'AbortError')))
+    await expect(credentialRequest('p', url, { signal: ac.signal })).rejects.toMatchObject({ code: 'timeout' })
+  })
+})
+
+describe('small helpers', () => {
+  it('jwtTimes ignores malformed payloads', () => {
+    expect(jwtTimes('a.!!!.c')).toEqual({})
+    expect(jwtTimes('nopayload')).toEqual({})
+    expect(jwtTimes(`x.${Buffer.from('{"iat":"no","exp":5}').toString('base64url')}.y`)).toEqual({ exp: 5 })
+  })
+
+  it('defineNatsCredentialsProvider returns the provider unchanged', () => {
+    const p = { name: 'n', fetch: async () => ({ userJwt: 'x' }) }
+    expect(defineNatsCredentialsProvider(p)).toBe(p)
+  })
+
+  it('describeError redacts non-Error values too', () => {
+    expect(describeError('leaked uat_abcdef')).toBe('leaked [redacted]')
+    expect(describeError(new Error('eyJa.eyJb.c'))).toBe('[redacted]')
+  })
+
+  it('infisical dispose forgets the cached access token', async () => {
+    const fetch = vi.fn()
+      .mockImplementation(async (u: string) => u.includes('/login') ? json({ accessToken: 'at', expiresIn: 3600 }) : json({ secret: { secretValue: 'C' } }))
+    vi.stubGlobal('fetch', fetch)
+    const p = infisicalProvider(base)
+    await p.fetch({ reason: 'initial', signal })
+    await p.dispose!()
+    await p.fetch({ reason: 'initial', signal })
+    expect(fetch.mock.calls.filter(([u]) => String(u).includes('/login'))).toHaveLength(2)
+  })
+
+  it('infisical rejects a login response without a token', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({})))
+    await expect(infisicalProvider(base).fetch({ reason: 'initial', signal })).rejects.toMatchObject({ code: 'bad-response' })
   })
 })

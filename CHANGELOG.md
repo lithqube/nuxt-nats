@@ -22,8 +22,9 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 - **Health reports `auth.mode`**: the method in use, never the identity or credentials.
 - **Credential providers.** `nats.credentials` fetches credentials before connecting,
   refreshes them ahead of expiry (20% of the JWT lifetime, jittered) and reconnects when they
-  change, with no restart. Built in: `infisical` (machine identity via Kubernetes, OIDC or
-  universal auth, over REST — no SDK dependency) and `synadia` (issues creds from the Control
+  change, with no restart. Built in: `infisical` (machine identity via Kubernetes, AWS IAM,
+  GCP, Azure managed identity, OIDC or universal auth, over REST — no SDK dependency; the AWS
+  SigV4 signing is verified against the AWS SDK signer in tests) and `synadia` (issues creds from the Control
   Plane). `custom` loads your `defineNatsCredentialsProvider()` file, bundled when
   `customProvider` is set and selectable at runtime. Failures keep the last good credentials and
   retry with backoff; the connection keeps retrying through auth errors.
