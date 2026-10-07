@@ -2,16 +2,20 @@
 // Dev helper for the live tests: find NATS users in a Synadia Cloud account and download one
 // user's creds with a personal access token. Not published (package.json "files" is dist/).
 //
-//   export SYNADIA_CLOUD_TOKEN=uat_...        # set in your shell; never commit or paste it
 //   node scripts/synadia-creds.mjs list
 //   node scripts/synadia-creds.mjs fetch <natsUserId> <out.creds> [--force]
+//
+// The token comes from SYNADIA_CLOUD_TOKEN, ~/.config/synadia/token, or the macOS Keychain
+// (service "synadia-cloud-pat") — see scripts/synadia-token.mjs. Never pass it on a command line.
 //
 // Prints ids, names and expiry only — never the token, a JWT or a seed. Each `fetch` is an
 // issuance recorded by Synadia Cloud; the file is written with mode 0600.
 import { existsSync, writeFileSync } from 'node:fs'
+import { KEYCHAIN_SERVICE, resolveSynadiaToken } from './synadia-token.mjs'
 
 const API = (process.env.SYNADIA_API_URL ?? 'https://cloud.synadia.com/api').replace(/\/$/, '')
-const TOKEN = process.env.SYNADIA_CLOUD_TOKEN
+const resolved = resolveSynadiaToken()
+const TOKEN = resolved?.token
 
 function fail(message, code = 1) {
   console.error(`synadia-creds: ${message}`)
@@ -65,7 +69,12 @@ async function fetchCreds(userId, out, force) {
 }
 
 const [cmd, ...args] = process.argv.slice(2)
-if (!TOKEN) fail('set SYNADIA_CLOUD_TOKEN to a Synadia Cloud personal access token', 2)
+if (!TOKEN) {
+  fail(`no Synadia Cloud token found. Store it once from Terminal (prompts, no echo):\n`
+    + `  security add-generic-password -a "$USER" -s ${KEYCHAIN_SERVICE} -w\n`
+    + `or put it in ~/.config/synadia/token (chmod 600), or set SYNADIA_CLOUD_TOKEN.`, 2)
+}
+console.error(`synadia-creds: token from ${resolved.source}`)
 if (cmd === 'list') await list()
 else if (cmd === 'fetch') await fetchCreds(args[0], args[1], args.includes('--force'))
 else fail('usage: list | fetch <natsUserId> <out.creds> [--force]', 2)

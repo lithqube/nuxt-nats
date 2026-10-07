@@ -7,17 +7,21 @@ import { buildAuthOptions } from '../../src/runtime/server/utils/buildConnection
 import { parseCreds } from '../../src/runtime/server/utils/parseCreds'
 import { synadiaServers } from '../../src/synadia'
 import type { SynadiaRegion } from '../../src/synadia'
+import { resolveSynadiaToken } from '../../scripts/synadia-token.mjs'
 
 // Opt-in, with either credential source:
-//   SYNADIA_LIVE=1 SYNADIA_CLOUD_TOKEN=uat_... SYNADIA_NATS_USER_ID=<id> npm run test:live
-//     fetches fresh creds for that NATS user from the Control Plane API and keeps them in
-//     memory (find the id with `node scripts/synadia-creds.mjs list`)
+//   SYNADIA_LIVE=1 SYNADIA_NATS_USER_ID=<id> npm run test:live
+//     fetches fresh creds for that NATS user from the Control Plane API with your personal
+//     access token and keeps them in memory. The token comes from SYNADIA_CLOUD_TOKEN,
+//     ~/.config/synadia/token or the macOS Keychain (scripts/synadia-token.mjs). Find the
+//     user id with `node scripts/synadia-creds.mjs list`.
 //   SYNADIA_LIVE=1 SYNADIA_CREDS_FILE=/path/to/user.creds npm run test:live
 // Optional: SYNADIA_REGION (default global), SYNADIA_SUBJECT_PREFIX (default nuxtnats.live),
 // SYNADIA_STREAMS=1 to also create and delete an R1 stream (uses one of your plan's streams).
 // The user needs pub/sub on "<prefix>.>" and "_INBOX.>", plus $JS.API.> for the stream test.
 const env = process.env
-const viaToken = !!(env.SYNADIA_CLOUD_TOKEN && env.SYNADIA_NATS_USER_ID)
+const pat = env.SYNADIA_NATS_USER_ID ? resolveSynadiaToken(env)?.token : undefined
+const viaToken = !!pat
 const enabled = env.SYNADIA_LIVE === '1' && (viaToken || !!env.SYNADIA_CREDS_FILE)
 const apiUrl = (env.SYNADIA_API_URL ?? 'https://cloud.synadia.com/api').replace(/\/$/, '')
 const prefix = process.env.SYNADIA_SUBJECT_PREFIX ?? 'nuxtnats.live'
@@ -45,7 +49,7 @@ describe.skipIf(!enabled)('Synadia Cloud (live)', () => {
     if (viaToken) {
       const res = await fetch(`${apiUrl}/core/beta/nats-users/${encodeURIComponent(env.SYNADIA_NATS_USER_ID!)}/creds`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${env.SYNADIA_CLOUD_TOKEN}`, Accept: 'text/plain' },
+        headers: { Authorization: `Bearer ${pat}`, Accept: 'text/plain' },
       })
       // Status only: the body is not needed to diagnose this and the token is never echoed.
       if (!res.ok) throw new Error(`Control Plane creds request for SYNADIA_NATS_USER_ID failed: HTTP ${res.status}`)
