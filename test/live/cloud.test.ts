@@ -1,8 +1,10 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { describe, it, expect, afterEach, beforeAll } from 'vitest'
 import { connect, wsconnect } from '@nats-io/transport-node'
 import type { NatsConnection } from '@nats-io/nats-core'
 import { jetstreamManager } from '@nats-io/jetstream'
 import { buildAuthOptions } from '../../src/runtime/server/utils/buildConnectionOptions'
+import { parseCreds } from '../../src/runtime/server/utils/parseCreds'
 import { synadiaServers } from '../../src/synadia'
 import type { SynadiaRegion } from '../../src/synadia'
 
@@ -25,6 +27,20 @@ afterEach(async () => {
 describe.skipIf(!enabled)('Synadia Cloud (live)', () => {
   const { servers, wsServers } = synadiaServers(region)
   const auth = () => buildAuthOptions({ ...none, credsFile: process.env.SYNADIA_CREDS_FILE })
+
+  // Over TLS the client swallows an authenticator error and the server reports only an
+  // "Authentication Timeout" after ~15s, so check the creds file before connecting.
+  beforeAll(() => {
+    const path = process.env.SYNADIA_CREDS_FILE!
+    let text: string
+    try {
+      text = readFileSync(path, 'utf8')
+    }
+    catch (err) {
+      throw new Error(`SYNADIA_CREDS_FILE "${path}" cannot be read: ${(err as NodeJS.ErrnoException).code ?? (err as Error).message}`, { cause: err })
+    }
+    parseCreds(text) // throws a clear error for a file that is not a .creds file
+  })
 
   it('connects over TLS with a creds file and round-trips a request', async () => {
     const nc = await connect({ servers, name: 'nuxt-nats-live-test', ...auth() })
