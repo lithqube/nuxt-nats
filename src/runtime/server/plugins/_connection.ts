@@ -5,6 +5,8 @@ import type { JetStreamClient, JetStreamManager } from '@nats-io/jetstream'
 let _nc: NatsConnection | undefined
 let _js: JetStreamClient | undefined
 let _jsm: JetStreamManager | undefined
+// The auth method in use, for the health endpoint. Never the credentials themselves.
+let _authMode: string | undefined
 
 export function getNatsConnection() {
   return _nc
@@ -14,6 +16,13 @@ export function getJetStream() {
 }
 export function getJetStreamManager() {
   return _jsm
+}
+
+export function getAuthMode() {
+  return _authMode
+}
+export function setAuthMode(mode: string | undefined) {
+  _authMode = mode
 }
 
 export function setNatsConnection(nc: NatsConnection | undefined) {

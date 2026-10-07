@@ -401,6 +401,9 @@ Undeclared subjects and `string`-typed subjects still compile, so you can adopt 
 ```ts
 export default defineNuxtConfig({
   nats: {
+    // Synadia Cloud: fills in servers/wsServers for the region. true = geo-routed global
+    synadia: false,
+
     // TCP servers. Default: ['nats://localhost:4222']
     servers: ['nats://localhost:4222'],
 
@@ -410,8 +413,14 @@ export default defineNuxtConfig({
     // 'auto' | 'tcp' | 'ws' — default 'auto': WebSocket when running on Bun, TCP otherwise
     transport: 'auto',
 
-    // Auth — prefer env vars in production. The first match wins:
-    // userJwt + nkeySeed > userJwt > nkeySeed > token > user/pass > anonymous
+    // Connection name in server reports. Default: 'nuxt-nats@<hostname>:<pid>'
+    name: '',
+
+    // Auth — set credentials with env vars (values here are written into the build output).
+    // The first match wins:
+    // creds > credsFile > userJwt + nkeySeed > userJwt > nkeySeed > token > user/pass > anonymous
+    creds: '',
+    credsFile: '',
     userJwt: '',
     nkeySeed: '',
     token: '',
@@ -441,6 +450,7 @@ export default defineNuxtConfig({
         maxAge: '7d',             // Go-style durations: '30s', '5m', '2h', '7d'
         maxBytes: 1_073_741_824,  // 1 GB
         duplicateWindow: '5m',
+        placement: { tags: ['geo:europe'] }, // optional; tags or cluster
         provision: 'startup',     // 'startup' | 'update' | 'never' (default: 'never')
       },
     ],
@@ -463,6 +473,9 @@ All `runtimeConfig.nats.*` values can be overridden at runtime. Prefix with `NUX
 | Variable | Description |
 |---|---|
 | `NUXT_NATS_SERVERS` | Comma-separated TCP server URLs |
+| `NUXT_NATS_CREDS` | `.creds` file contents, raw or base64 (Synadia Cloud, `nsc`) |
+| `NUXT_NATS_CREDS_FILE` | Path to a `.creds` file, re-read on every reconnect |
+| `NUXT_NATS_NAME` | Connection name |
 | `NUXT_NATS_TOKEN` | Auth token |
 | `NUXT_NATS_USER` | Username |
 | `NUXT_NATS_PASS` | Password |
@@ -474,6 +487,7 @@ All `runtimeConfig.nats.*` values can be overridden at runtime. Prefix with `NUX
 
 The module selects an auth method based on which credentials are set, in this order:
 
+0. **Creds** — `creds` (contents) or `credsFile` (path). The standard format for Synadia Cloud and `nsc generate creds`. A creds file is re-read on every reconnect, so rotating it needs no restart. See the [Synadia Cloud guide](docs/guides/synadia-cloud.md).
 1. **JWT + NKey (production)** — when both `userJwt` and `nkeySeed` are set, the module uses `jwtAuthenticator(jwt, seed)` from `@nats-io/nats-core`. This is the standard for NATS servers configured with the JWT resolver (`nsc` operator/account/user hierarchy). The JWT is sent during `CONNECT`; the NKey seed is used to sign the server's nonce to prove possession of the private key.
 2. **JWT (unsigned)** — when `userJwt` is set without `nkeySeed`, uses `jwtAuthenticator(jwt)`. The JWT is sent unsigned — usable only against servers explicitly configured to accept unsigned JWTs, such as when identity is pinned out-of-band by operator policy or in test environments.
 3. **NKey only (dev)** — when only `nkeySeed` is set, uses `nkeyAuthenticator(seed)`. For static NKey-based servers without a JWT resolver.

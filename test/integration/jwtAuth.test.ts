@@ -1,7 +1,10 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { connect } from '@nats-io/transport-node'
 import { jetstream, jetstreamManager } from '@nats-io/jetstream'
-import { createOperator, createAccount, createUser, encodeOperator, encodeAccount, encodeUser } from '@nats-io/jwt'
+import { createOperator, createAccount, createUser, encodeOperator, encodeAccount, encodeUser, fmtCreds } from '@nats-io/jwt'
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers'
 import { buildAuthOptions } from '../../src/runtime/server/utils/buildConnectionOptions'
 
@@ -11,6 +14,12 @@ interface JwtAuthTestContext {
   userJwt: string
   nkeySeed: string
   badNkeySeed: string
+  /** A `.creds` file for the valid user. */
+  creds: string
+  /** A `.creds` file for a user the account does not know (signed by another account). */
+  foreignCreds: string
+  /** JWT for a bearer-token user: authenticates without signing the nonce. */
+  bearerJwt: string
 }
 
 let ctx: JwtAuthTestContext
@@ -40,6 +49,18 @@ beforeAll(async () => {
     pub: { allow: ['jwt.>', '_INBOX.>', '$JS.API.>'], deny: [] },
     sub: { allow: ['jwt.>', '_INBOX.>', '$JS.API.>'], deny: [] },
   })
+
+  const bearerUkp = createUser()
+  const bearerJwt = await encodeUser('BEARER', bearerUkp, akp, {
+    bearer_token: true,
+    pub: { allow: ['jwt.>'], deny: [] },
+    sub: { allow: ['jwt.>', '_INBOX.>'], deny: [] },
+  })
+
+  // Signed by an account the server was never told about.
+  const foreignAkp = createAccount()
+  const foreignUkp = createUser()
+  const foreignJwt = await encodeUser('FOREIGN', foreignUkp, foreignAkp, {})
 
   const oJwt = await encodeOperator('TEST', okp, {
     system_account: skp.getPublicKey(),
@@ -76,6 +97,9 @@ resolver_preload: {
     userJwt: uJwt,
     nkeySeed: new TextDecoder().decode(ukp.getSeed()),
     badNkeySeed: new TextDecoder().decode(badUkp.getSeed()),
+    creds: new TextDecoder().decode(fmtCreds(uJwt, ukp)),
+    foreignCreds: new TextDecoder().decode(fmtCreds(foreignJwt, foreignUkp)),
+    bearerJwt,
   }
 }, 90_000)
 
@@ -156,5 +180,53 @@ describe('buildAuthOptions — JWT+NKey against a JWT-resolver NATS server', () 
     await expect(
       connect({ servers: [ctx.servers], ...auth, maxReconnectAttempts: 0, reconnect: false }),
     ).rejects.toThrow()
+  })
+})
+
+describe('buildAuthOptions — .creds (Synadia Cloud style) against a JWT-resolver NATS server', () => {
+  const none = { token: '', user: '', pass: '', nkeySeed: '', userJwt: '' }
+
+  it('connects with raw creds file contents', async () => {
+    const nc = await connect({ servers: [ctx.servers], ...buildAuthOptions({ ...none, creds: ctx.creds }) })
+    expect(nc.isClosed()).toBe(false)
+    await nc.drain()
+  })
+
+  it('connects with base64-encoded creds (as stored in an env var or secrets manager)', async () => {
+    const creds = Buffer.from(ctx.creds).toString('base64')
+    const nc = await connect({ servers: [ctx.servers], ...buildAuthOptions({ ...none, creds }) })
+    expect(nc.isClosed()).toBe(false)
+    await nc.drain()
+  })
+
+  it('connects with a creds file and re-reads it on reconnect', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'nuxt-nats-creds-'))
+    const credsFile = join(dir, 'user.creds')
+    writeFileSync(credsFile, ctx.foreignCreds)
+
+    // The file holds creds the server rejects, so the first connect fails...
+    await expect(
+      connect({ servers: [ctx.servers], ...buildAuthOptions({ ...none, credsFile }), maxReconnectAttempts: 0, reconnect: false }),
+    ).rejects.toThrow()
+
+    // ...and the same options succeed once the file is rotated, without rebuilding them.
+    const auth = buildAuthOptions({ ...none, credsFile })
+    writeFileSync(credsFile, ctx.creds)
+    const nc = await connect({ servers: [ctx.servers], ...auth })
+    expect(nc.isClosed()).toBe(false)
+    await nc.drain()
+  })
+
+  it('creds take priority over a conflicting userJwt / nkeySeed', async () => {
+    const auth = buildAuthOptions({ ...none, creds: ctx.creds, userJwt: 'eyJ.bad.jwt', nkeySeed: ctx.badNkeySeed })
+    const nc = await connect({ servers: [ctx.servers], ...auth })
+    expect(nc.isClosed()).toBe(false)
+    await nc.drain()
+  })
+
+  it('connects a bearer-token user with the JWT alone (no seed)', async () => {
+    const nc = await connect({ servers: [ctx.servers], ...buildAuthOptions({ ...none, userJwt: ctx.bearerJwt }) })
+    expect(nc.isClosed()).toBe(false)
+    await nc.drain()
   })
 })

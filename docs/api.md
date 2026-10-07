@@ -258,7 +258,6 @@ function useObj(bucket: string, opts?: Partial<ObjectStoreOptions>): Promise<Obj
 |---|---|---|
 | `storage` | `'file' \| 'memory'` | Storage backend. Default: `'file'` |
 | `replicas` | `number` | Replication factor. Default: 1 |
-| `max_chunk_size` | `number` | Chunk size in bytes. Default: 131072 (128 KB) |
 | `ttl` | `number` | Entry TTL in ms. Default: none |
 | `description` | `string` | Human-readable description |
 

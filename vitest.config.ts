@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    exclude: ['test/integration/**', 'node_modules/**'],
+    exclude: ['test/integration/**', 'test/live/**', 'node_modules/**'],
     // Type-level tests: test/types/*.test-d.ts are type-checked, never executed.
     typecheck: {
       enabled: true,

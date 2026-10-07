@@ -155,7 +155,7 @@ declare module 'nuxt-nats' {
 ## Key Constraints
 
 - **Never import from `nats.ts` in tests** unless `nitropack/runtime` is mocked first (see `statusHandling.test.ts`). Use `_connection.ts` or individual utils.
-- **Auth priority**: JWT + NKey > JWT only > NKey only > token > user/pass > anonymous (`buildAuthOptions()`). Only one method is applied — setting multiple is a silent misconfiguration.
+- **Auth priority**: creds > creds file > JWT + NKey > JWT only > NKey only > token > user/pass > anonymous (`buildAuthOptions()`, `resolveAuthMode()`). Creds are parsed by our `parseCreds()`, not nats.js `credsAuthenticator`, whose pattern rejects a creds file without a trailing newline. A creds file is read once per connect (JWT and seed from the same read). Only one method is applied — setting multiple is a silent misconfiguration.
 - **`@nats-io/nats-core`** is the correct import for `nkeyAuthenticator` and `jwtAuthenticator`, not `@nats-io/nkeys`.
 - **Integration test files run one at a time** (`fileParallelism: false`; Vitest 4 removed `singleFork`) — each file starts and stops its own Testcontainers NATS via `beforeAll`/`afterAll` calling `startNats()`/`stopNats()`. On this Mac's OrbStack, Testcontainers may need `DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`.
 - Unit test consumer mocks need a `handleRef` pattern (see `test/unit/consumer.test.ts`) to avoid the while-loop spinning after the mock iterator is exhausted.

@@ -1,5 +1,9 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
-import { buildAuthOptions } from '../../src/runtime/server/utils/buildConnectionOptions'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest'
+import { createAccount, createUser, encodeUser, fmtCreds } from '@nats-io/jwt'
+import { buildAuthOptions, describeAuth, resolveAuthMode } from '../../src/runtime/server/utils/buildConnectionOptions'
 
 afterEach(() => { vi.restoreAllMocks() })
 
@@ -211,5 +215,59 @@ describe('buildAuthOptions — token / user+pass / anonymous', () => {
 
     expect(opts.authenticator).toBeDefined()
     expect(opts.token).toBeUndefined()
+  })
+})
+
+describe('buildAuthOptions — creds (Synadia Cloud)', () => {
+  const none = { token: '', user: '', pass: '', nkeySeed: '', userJwt: '' }
+  let creds = ''
+  let jwt = ''
+
+  beforeAll(async () => {
+    const ukp = createUser()
+    jwt = await encodeUser('U', ukp, createAccount(), {})
+    creds = new TextDecoder().decode(fmtCreds(jwt, ukp))
+  })
+
+  it('uses an authenticator for creds and ignores every lower-priority method', () => {
+    const opts = buildAuthOptions({ ...none, creds, userJwt: 'eyJ.x.y', nkeySeed: 'SUAX', token: 't', user: 'u', pass: 'p' })
+    expect(typeof opts.authenticator).toBe('function')
+    expect(opts.token).toBeUndefined()
+    expect(opts.user).toBeUndefined()
+  })
+
+  it('throws on malformed creds before any connect attempt', () => {
+    expect(() => buildAuthOptions({ ...none, creds: 'not-a-creds-file' })).toThrow(/not a creds file/)
+  })
+
+  it('does not read the creds file when building options (it is read per connect)', () => {
+    expect(() => buildAuthOptions({ ...none, credsFile: '/does/not/exist.creds' })).not.toThrow()
+  })
+
+  it('resolveAuthMode follows the documented priority', () => {
+    expect(resolveAuthMode({ ...none, creds, credsFile: '/x' })).toBe('creds')
+    expect(resolveAuthMode({ ...none, credsFile: '/x', userJwt: 'j' })).toBe('creds-file')
+    expect(resolveAuthMode({ ...none, userJwt: 'j', nkeySeed: 's' })).toBe('jwt-nkey')
+    expect(resolveAuthMode({ ...none, userJwt: 'j' })).toBe('jwt')
+    expect(resolveAuthMode({ ...none, nkeySeed: 's' })).toBe('nkey')
+    expect(resolveAuthMode({ ...none, token: 't' })).toBe('token')
+    expect(resolveAuthMode({ ...none, user: 'u' })).toBe('user-pass')
+    expect(resolveAuthMode(none)).toBe('anonymous')
+  })
+
+  it('describeAuth returns the creds JWT for expiry checks', () => {
+    expect(describeAuth({ ...none, creds })).toEqual({ mode: 'creds', jwt, source: 'NUXT_NATS_CREDS' })
+  })
+
+  it('describeAuth reads a creds file once', () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'nuxt-nats-')), 'u.creds')
+    writeFileSync(file, creds)
+    expect(describeAuth({ ...none, credsFile: file })).toEqual({ mode: 'creds-file', jwt, source: 'NUXT_NATS_CREDS_FILE' })
+  })
+
+  it('describeAuth logs an unreadable creds file without throwing', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(describeAuth({ ...none, credsFile: '/does/not/exist.creds' })).toEqual({ mode: 'creds-file' })
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('/does/not/exist.creds'), expect.any(String))
   })
 })

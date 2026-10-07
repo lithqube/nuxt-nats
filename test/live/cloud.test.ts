@@ -1,0 +1,58 @@
+import { describe, it, expect, afterEach } from 'vitest'
+import { connect, wsconnect } from '@nats-io/transport-node'
+import type { NatsConnection } from '@nats-io/nats-core'
+import { jetstreamManager } from '@nats-io/jetstream'
+import { buildAuthOptions } from '../../src/runtime/server/utils/buildConnectionOptions'
+import { synadiaServers } from '../../src/synadia'
+import type { SynadiaRegion } from '../../src/synadia'
+
+// Opt-in: SYNADIA_LIVE=1 SYNADIA_CREDS_FILE=/path/to/user.creds npm run test:live
+// Optional: SYNADIA_REGION (default global), SYNADIA_SUBJECT_PREFIX (default nuxtnats.live),
+// SYNADIA_STREAMS=1 to also create and delete an R1 stream (uses one of your plan's streams).
+// The user needs pub/sub on "<prefix>.>" and "_INBOX.>", plus $JS.API.> for the stream test.
+const enabled = process.env.SYNADIA_LIVE === '1' && !!process.env.SYNADIA_CREDS_FILE
+const prefix = process.env.SYNADIA_SUBJECT_PREFIX ?? 'nuxtnats.live'
+const region = (process.env.SYNADIA_REGION ?? 'global') as SynadiaRegion
+
+const none = { token: '', user: '', pass: '', nkeySeed: '', userJwt: '' }
+const open: NatsConnection[] = []
+
+afterEach(async () => {
+  // Free plans allow few connections: always release them.
+  await Promise.allSettled(open.splice(0).map(nc => nc.close()))
+})
+
+describe.skipIf(!enabled)('Synadia Cloud (live)', () => {
+  const { servers, wsServers } = synadiaServers(region)
+  const auth = () => buildAuthOptions({ ...none, credsFile: process.env.SYNADIA_CREDS_FILE })
+
+  it('connects over TLS with a creds file and round-trips a request', async () => {
+    const nc = await connect({ servers, name: 'nuxt-nats-live-test', ...auth() })
+    open.push(nc)
+    const subject = `${prefix}.echo`
+    const sub = nc.subscribe(subject, { max: 1, callback: (_err, msg) => { msg.respond(msg.data) } })
+    const reply = await nc.request(subject, new TextEncoder().encode('ping'), { timeout: 5_000 })
+    expect(new TextDecoder().decode(reply.data)).toBe('ping')
+    sub.unsubscribe()
+  })
+
+  it('connects over WebSocket', async () => {
+    const nc = await wsconnect({ servers: wsServers, name: 'nuxt-nats-live-test-ws', ...auth() })
+    open.push(nc)
+    expect(await nc.rtt()).toBeGreaterThan(0)
+  })
+
+  it.skipIf(process.env.SYNADIA_STREAMS !== '1')('creates and deletes an R1 stream', async () => {
+    const nc = await connect({ servers, name: 'nuxt-nats-live-test-js', ...auth() })
+    open.push(nc)
+    const jsm = await jetstreamManager(nc)
+    const name = `NUXTNATS_LIVE_${Date.now()}`
+    await jsm.streams.add({ name, subjects: [`${prefix}.js.>`], num_replicas: 1, max_bytes: 1024 * 1024 } as never)
+    try {
+      expect((await jsm.streams.info(name)).config.name).toBe(name)
+    }
+    finally {
+      await jsm.streams.delete(name)
+    }
+  })
+})

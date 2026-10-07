@@ -1,5 +1,5 @@
 import { defineEventHandler } from 'h3'
-import { getNatsConnection, getJetStreamManager } from '../plugins/_connection'
+import { getNatsConnection, getJetStreamManager, getAuthMode } from '../plugins/_connection'
 import { getAgentStatuses } from '../utils/defineNatsAgent'
 
 export default defineEventHandler(async () => {
@@ -13,6 +13,8 @@ export default defineEventHandler(async () => {
     connected: true,
     status: 'ok',
     server: nc.getServer(),
+    // The method only (e.g. 'creds-file'), never identifiers or secret material.
+    auth: { mode: getAuthMode() ?? 'unknown' },
   }
 
   // RTT check

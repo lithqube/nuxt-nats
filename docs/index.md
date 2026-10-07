@@ -9,13 +9,14 @@ NATS JetStream integration for Nuxt 4. Server-side publish, typed consumers, KV 
 | Guide | Description |
 |---|---|
 | [Getting Started](./guides/getting-started.md) | Install, minimal setup, first publish, health check |
-| [Authentication](./guides/auth.md) | JWT/NKey, token, user/pass, anonymous; priority order, `nsc` workflow, startup validation |
+| [Authentication](./guides/auth.md) | Creds files, JWT/NKey, token, user/pass, anonymous; priority order, `nsc` workflow, startup validation |
 | [Streams](./guides/streams.md) | Configure retention, storage, provisioning, deduplication |
 | [Consumers](./guides/consumers.md) | Durable pull consumers, declarative config, provisioning, ack patterns, dead-letter handling, scaling |
 | [KV Store](./guides/kv.md) | Key-value storage, watch, typed helpers |
 | [Object Store](./guides/object-store.md) | Blob storage, streaming upload/download |
 | [Agent Fabric](./guides/agents.md) | Host or call AI agents on the Synadia Agent Protocol over NATS |
 | [Typed Events](./guides/typed-events.md) | NatsEvents augmentation, end-to-end type safety |
+| [Synadia Cloud](./guides/synadia-cloud.md) | Connect to Synadia Cloud: endpoints, `.creds`, plan limits, placement, connection budget |
 | [Deployment](./guides/deployment.md) | Node, Docker, Kubernetes, Vercel, Cloudflare Workers, Bun |
 
 ### Reference

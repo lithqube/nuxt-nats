@@ -1,23 +1,29 @@
 # Authentication
 
-The module supports five authentication methods plus anonymous, selected automatically based on which credentials you set. The selection is **priority-based** — only one method is applied per connection. Configure credentials via `nuxt.config.ts` (or the matching `NUXT_NATS_*` environment variables) and the Nitro plugin picks the right authenticator at startup.
+The module supports seven authentication methods plus anonymous, selected automatically based on which credentials you set. The selection is **priority-based** — only one method is applied per connection. Configure credentials via `nuxt.config.ts` (or the matching `NUXT_NATS_*` environment variables) and the Nitro plugin picks the right authenticator at startup.
 
 ## Priority order
 
 The plugin tries methods in this order and stops at the first match:
 
-1. **JWT + NKey** (`userJwt` **and** `nkeySeed`) — production
-2. **JWT only** (`userJwt` alone) — unsigned JWT, test or pinned-identity use
-3. **NKey only** (`nkeySeed` alone) — static NKey servers
-4. **Token** (`token`) — single shared secret
-5. **User / pass** (`user`, optionally `pass`) — basic auth
-6. **Anonymous** — no credentials
+1. **Creds** (`creds`) — `.creds` file contents, raw or base64; Synadia Cloud
+2. **Creds file** (`credsFile`) — path to a `.creds` file, re-read on every reconnect
+3. **JWT + NKey** (`userJwt` **and** `nkeySeed`) — production
+4. **JWT only** (`userJwt` alone) — unsigned or bearer-token JWT
+5. **NKey only** (`nkeySeed` alone) — static NKey servers
+6. **Token** (`token`) — single shared secret
+7. **User / pass** (`user`, optionally `pass`) — basic auth
+8. **Anonymous** — no credentials
 
 Setting multiple credentials is a **silent misconfiguration** — the first match wins and the others are ignored. Pick one method per environment.
 
 ## Quick reference
 
 ```bash
+# Creds file (Synadia Cloud, nsc) — contents or a path
+NUXT_NATS_CREDS="$(base64 < app.creds)"
+NUXT_NATS_CREDS_FILE=/run/secrets/nats.creds
+
 # 1. JWT + NKey (production) — NATS JWT resolver
 NUXT_NATS_USER_JWT='eyJ0eXAiOiJqd3Q...'
 NUXT_NATS_NKEY_SEED='SUACSP3ZI...'

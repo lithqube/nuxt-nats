@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { JetStreamApiError } from '@nats-io/jetstream'
-import { provisionStreams } from '../../src/runtime/server/utils/provisionStreams'
+import { explainStreamError, provisionStreams } from '../../src/runtime/server/utils/provisionStreams'
 import type { StreamDefinition } from '../../src/runtime/server/utils/provisionStreams'
 
 function makeStreamExistsError() {
@@ -169,5 +169,35 @@ describe('provisionStreams — provision: update', () => {
     await provisionStreams(jsm as any, [{ ...baseDef, provision: 'update' }])
     expect(jsm._update).not.toHaveBeenCalled()
     expect(error).toHaveBeenCalledWith(expect.stringContaining('Failed to provision'), expect.any(Error))
+  })
+})
+
+describe('provisionStreams — placement and plan limits', () => {
+  it('passes placement tags and cluster through', async () => {
+    const jsm = makeJsm()
+    await provisionStreams(jsm as any, [{ ...baseDef, provision: 'startup', placement: { tags: ['geo:europe'], cluster: 'c1' } }])
+    expect(jsm._add.mock.calls[0]![0].placement).toEqual({ tags: ['geo:europe'], cluster: 'c1' })
+  })
+
+  it('omits placement when it is empty', async () => {
+    const jsm = makeJsm()
+    await provisionStreams(jsm as any, [{ ...baseDef, provision: 'startup', placement: { tags: [] } }])
+    expect('placement' in jsm._add.mock.calls[0]![0]).toBe(false)
+  })
+
+  it('explains insufficient resources (10023) with the plan hint', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const jsm = makeJsm()
+    jsm._add.mockRejectedValueOnce(new JetStreamApiError({ code: 500, description: 'insufficient resources', err_code: 10023 }))
+    await provisionStreams(jsm as any, [{ ...baseDef, provision: 'startup', replicas: 3 }])
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('free plan: R1 only'), expect.any(JetStreamApiError))
+  })
+
+  it('explainStreamError knows the limit codes and nothing else', () => {
+    const err = (code: number) => new JetStreamApiError({ code: 400, description: 'x', err_code: code })
+    expect(explainStreamError(err(10027))).toMatch(/maximum number of streams/)
+    expect(explainStreamError(err(10113))).toMatch(/maxBytes/)
+    expect(explainStreamError(err(10058))).toBeUndefined()
+    expect(explainStreamError(new Error('x'))).toBeUndefined()
   })
 })

@@ -9,6 +9,10 @@ import {
 } from '@nuxt/kit'
 import { defu } from 'defu'
 import { generateConsumerPlugin } from './consumerTemplate'
+import { synadiaServers } from './synadia'
+import type { SynadiaCloudOptions } from './synadia'
+
+export type { SynadiaCloudOptions, SynadiaRegion } from './synadia'
 
 // Public runtime types. The published types entry (dist/types.d.mts) re-exports only what
 // this file exports, so without this line `declare module 'nuxt-nats' { interface NatsEvents
@@ -24,6 +28,8 @@ export interface StreamDefinition {
   maxAge?: string
   maxBytes?: number
   duplicateWindow?: string
+  /** Where the stream is placed. On Synadia Cloud use tags such as `geo:europe` or `geo:us`. */
+  placement?: { cluster?: string, tags?: string[] }
   /**
    * 'startup'  — create the stream on boot; logs a warning if it already exists with a different config.
    * 'update'   — create the stream on boot; update it in-place if it already exists.
@@ -54,12 +60,31 @@ export interface ConsumerDefinition {
 }
 
 export interface ModuleOptions {
+  /**
+   * Connect to Synadia Cloud. Sets `servers` and `wsServers` to the region's TLS and
+   * WebSocket endpoints unless they are set explicitly. Authenticate with `credsFile` or
+   * NUXT_NATS_CREDS. `true` is the geo-routed global endpoint.
+   */
+  synadia?: boolean | SynadiaCloudOptions
   /** NATS server URLs for the TCP transport. Also used by the WebSocket transport when wsServers is empty. Default: ['nats://localhost:4222'] */
   servers?: string[]
   /** NATS server URLs for the WebSocket transport (Bun under 'auto', edge runtimes with 'ws'). */
   wsServers?: string[]
   /** Transport selection. 'auto' uses WebSocket when running on Bun and TCP otherwise; set 'ws' for edge runtimes. Default: 'auto' */
   transport?: 'auto' | 'tcp' | 'ws'
+  /** Connection name shown in server reports and Synadia Cloud. Default: `nuxt-nats@<hostname>:<pid>` */
+  name?: string
+  /**
+   * Creds file contents (user JWT + NKey seed), raw or base64. Set it with the NUXT_NATS_CREDS
+   * env var, never in nuxt.config: a value set at build time is written into the build output.
+   * Takes priority over every other auth method.
+   */
+  creds?: string
+  /**
+   * Path to a `.creds` file, read at runtime and re-read on every reconnect, so a rotated
+   * file (e.g. a Kubernetes Secret volume) is picked up without a restart. Env: NUXT_NATS_CREDS_FILE
+   */
+  credsFile?: string
   /** NATS auth token. Use NUXT_NATS_TOKEN env var in production. */
   token?: string
   /** NATS username for user/pass auth. */
@@ -98,6 +123,15 @@ export interface ModuleOptions {
   }
 }
 
+/** Credential options and the env vars that should carry them instead of nuxt.config. */
+const SECRET_OPTIONS = [
+  ['creds', 'NUXT_NATS_CREDS'],
+  ['token', 'NUXT_NATS_TOKEN'],
+  ['pass', 'NUXT_NATS_PASS'],
+  ['nkeySeed', 'NUXT_NATS_NKEY_SEED'],
+  ['userJwt', 'NUXT_NATS_USER_JWT'],
+] as const satisfies ReadonlyArray<readonly [keyof ModuleOptions, string]>
+
 export default defineNuxtModule<ModuleOptions>({
   meta: {
     name: 'nuxt-nats',
@@ -106,7 +140,6 @@ export default defineNuxtModule<ModuleOptions>({
   },
 
   defaults: {
-    servers: ['nats://localhost:4222'],
     transport: 'auto',
     maxReconnectAttempts: -1,
     streams: [],
@@ -117,12 +150,35 @@ export default defineNuxtModule<ModuleOptions>({
   setup(options, nuxt) {
     const resolver = createResolver(import.meta.url)
 
+    // Synadia Cloud fills in its endpoints; explicit servers still win.
+    const cloud = options.synadia
+      ? synadiaServers(options.synadia === true ? 'global' : options.synadia.region)
+      : undefined
+    const servers = options.servers ?? cloud?.servers ?? ['nats://localhost:4222']
+    const wsServers = options.wsServers ?? cloud?.wsServers ?? []
+
+    // Values set in nuxt.config are serialized into the build output (.output), so a
+    // credential there ships with every artifact. Runtime env vars do not.
+    if (!nuxt.options.dev) {
+      const literal = SECRET_OPTIONS.filter(([key]) => options[key])
+      if (literal.length) {
+        console.warn(
+          `[nuxt-nats] ${literal.map(([key]) => `nats.${key}`).join(', ')} set in nuxt.config is written into the build output. `
+          + `Set ${literal.map(([, env]) => env).join(', ')} at runtime instead.`,
+        )
+      }
+    }
+
     // Push NATS config into private runtimeConfig — credentials stay server-side only
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     nuxt.options.runtimeConfig.nats = defu(nuxt.options.runtimeConfig.nats as any, {
-      servers: options.servers,
-      wsServers: options.wsServers ?? [],
+      name: options.name ?? '',
+      servers,
+      wsServers,
       transport: options.transport,
+      // Pre-seeded with '' so NUXT_NATS_CREDS / NUXT_NATS_CREDS_FILE map at runtime.
+      creds: options.creds ?? '',
+      credsFile: options.credsFile ?? '',
       token: options.token ?? '',
       user: options.user ?? '',
       pass: options.pass ?? '',

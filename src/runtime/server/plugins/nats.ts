@@ -1,3 +1,4 @@
+import { hostname } from 'node:os'
 import { defineNitroPlugin, useRuntimeConfig } from 'nitropack/runtime'
 import { connect, wsconnect } from '@nats-io/transport-node'
 import type { NatsConnection, Status } from '@nats-io/nats-core'
@@ -7,13 +8,14 @@ import { stopAllAgents } from '../utils/defineNatsAgent'
 import { closeAgents } from '../utils/useAgents'
 import { provisionStreams } from '../utils/provisionStreams'
 import type { StreamDefinition } from '../utils/provisionStreams'
-import { buildAuthOptions } from '../utils/buildConnectionOptions'
+import { buildAuthOptions, describeAuth } from '../utils/buildConnectionOptions'
 import { normalizeServers } from '../utils/normalizeServers'
 import { validateJwt } from '../utils/validateJwt'
 import { _fireConnectError, _fireReconnect, _fireDisconnect } from '../utils/useNatsHooks'
 import {
   getNatsConnection,
   setNatsConnection,
+  setAuthMode,
   setJetStream,
   setJetStreamManager,
 } from './_connection'
@@ -26,9 +28,16 @@ function isBunRuntime(): boolean {
   return typeof globalThis !== 'undefined' && 'Bun' in globalThis
 }
 
+export function defaultConnectionName(): string {
+  return `nuxt-nats@${hostname()}:${process.pid}`
+}
+
 async function buildConnection(cfg: NatsRuntimeConfig): Promise<NatsConnection> {
   const opts: Record<string, unknown> = {
     maxReconnectAttempts: cfg.maxReconnectAttempts ?? -1,
+    // Shown per connection in `nats server report connections` and Synadia Cloud's
+    // connection graph, so each instance is recognizable.
+    name: cfg.name || defaultConnectionName(),
   }
 
   Object.assign(opts, buildAuthOptions(cfg))
@@ -78,6 +87,7 @@ async function drainAndClose() {
   }
   finally {
     setNatsConnection(undefined)
+    setAuthMode(undefined)
     setJetStream(undefined)
     setJetStreamManager(undefined)
     _isClosing = false
@@ -85,9 +95,12 @@ async function drainAndClose() {
 }
 
 interface NatsRuntimeConfig {
+  name: string
   servers: string | string[]
   wsServers: string | string[]
   transport: string
+  creds: string
+  credsFile: string
   token: string
   user: string
   pass: string
@@ -104,7 +117,9 @@ interface NatsRuntimeConfig {
 export default defineNitroPlugin(async (nitroApp) => {
   const config = useRuntimeConfig().nats as NatsRuntimeConfig
 
-  validateJwt(config.userJwt)
+  const auth = describeAuth(config)
+  setAuthMode(auth.mode)
+  if (auth.jwt) validateJwt(auth.jwt, auth.source)
 
   let nc: NatsConnection
   try {

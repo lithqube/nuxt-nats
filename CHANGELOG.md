@@ -6,6 +6,35 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Synadia Cloud support.** `nats.synadia: true` (or `{ region }`) sets the servers to
+  Synadia Cloud's TLS and WebSocket endpoints. A new guide covers endpoints, plan limits,
+  placement and the connection budget.
+- **`.creds` authentication.** `creds` (`NUXT_NATS_CREDS`, raw or base64) and `credsFile`
+  (`NUXT_NATS_CREDS_FILE`) take priority over every other auth method. A creds file is
+  re-read on each reconnect, so a rotated file takes effect without a restart. Bearer-token
+  users connect with `userJwt` alone.
+- **Stream `placement`** (`tags`, `cluster`) on stream definitions.
+- **Connection `name`**, defaulting to `nuxt-nats@<hostname>:<pid>`.
+- **Health reports `auth.mode`**: the method in use, never the identity or credentials.
+
+### Changed
+
+- Stream provisioning failures caused by account or plan limits (insufficient resources,
+  stream count, storage, required `max_bytes`) now log what to check.
+- A build warns when a credential (`creds`, `token`, `pass`, `nkeySeed`, `userJwt`) is set
+  in `nuxt.config`, which writes it into the build output.
+
+### Fixed
+
+- The API reference listed `max_chunk_size` as a `useObj()` bucket option. It is a
+  per-object `put()` option.
+
+---
+
 ## [0.1.0-beta.3] — 2026-10-07
 
 ### Changed

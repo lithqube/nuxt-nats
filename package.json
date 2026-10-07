@@ -60,6 +60,7 @@
     "test": "NODE_OPTIONS=--max-old-space-size=4096 vitest run",
     "test:watch": "NODE_OPTIONS=--max-old-space-size=4096 vitest watch",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "test:all": "npm run test && npm run test:integration",
     "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
     "version:print": "scripts/version.sh",
