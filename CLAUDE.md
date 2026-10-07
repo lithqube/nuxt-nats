@@ -111,6 +111,12 @@ The async message loop runs in a detached `async IIFE`. `handle.stop()` sets `st
 
 Relative `handler` paths resolve against `nuxt.options.serverDir`, never `<srcDir>/server`: in Nuxt 4 `srcDir` is `app/` whenever that directory exists. A handler import that does not resolve only warns at build time ("treating it as an external dependency"), then crashes every process with `ERR_MODULE_NOT_FOUND` at startup.
 
+### Credential providers
+
+`nats.credentials.provider` other than `static` puts a `CredentialManager` (`src/runtime/server/credentials/manager.ts`) in front of the connection. `nats.ts` awaits `manager.init()` before `connect()`, passes `manager.authenticator()` (reads the current creds on every reconnect) with `ignoreAuthErrorAbort: true` (otherwise two auth errors close the client for good), then `manager.attach(() => nc.reconnect())`. Refreshes are single-flight, scheduled at `exp − clamp(lifetime × leadRatio, minLeadSec, maxLeadSec)` ±10% jitter, and a changed fingerprint triggers a rate-limited reconnect. `handleStatus()` calls `refreshNow('auth-error')` on authorization / authentication-expired errors, not on permission violations. Provider errors are `CredentialsProviderError` (`{ provider, code, status }`) and never include response bodies; log through `describeError()` (`redact.ts`).
+
+The custom provider reaches `nats.ts` through the Nitro virtual module `#nuxt-nats/credentials-provider` (`src/providerTemplate.ts`, registered in `nitro:config`), imported statically because a generated plugin would run after the connect. It is bundled whenever `customProvider` is set. Unit tests alias that id to `test/fixtures/credentials/no-provider.ts` in `vitest.config.ts`. Infisical is called over REST, not `@infisical/sdk` (which pulls in the AWS SDK).
+
 ### Dead-letter handling
 
 NATS has no dead-letter queue; the `MAX_DELIVERIES` / `MSG_TERMINATED` advisories are the only signal. `defineDeadLetterConsumer()` (in `utils/deadLetter.ts`) is a `defineNatsConsumer` over a user-provisioned stream that captures both advisory subjects. `toDeadLetterEvent()` derives `kind` from the payload's `type`, not the subject, and copies `consumerSeq`/`reason` only for `terminated`: `max_deliver` has no `consumer_seq`, and a test asserts the key is absent. The original message is fetched with `jsm.streams.getMessage(stream, { seq })`; a failed fetch is expected (the message aged out) and yields `message: null` plus a warning. There is no `deadLetterSubject` by design — a failing dead-letter handler would loop.

@@ -11,7 +11,12 @@ import type { StreamDefinition } from '../utils/provisionStreams'
 import { buildAuthOptions, describeAuth } from '../utils/buildConnectionOptions'
 import { normalizeServers } from '../utils/normalizeServers'
 import { validateJwt } from '../utils/validateJwt'
-import { _fireConnectError, _fireReconnect, _fireDisconnect } from '../utils/useNatsHooks'
+import { _fireConnectError, _fireReconnect, _fireDisconnect, _fireCredentialsRefreshed, _fireCredentialsError } from '../utils/useNatsHooks'
+import { createCredentialsProvider } from '../credentials'
+import type { CredentialsRuntimeConfig } from '../credentials'
+import { CredentialManager, getCredentialManager, setCredentialManager } from '../credentials/manager'
+import { describeError } from '../credentials/redact'
+import customCredentialsProvider from '#nuxt-nats/credentials-provider'
 import {
   getNatsConnection,
   setNatsConnection,
@@ -32,7 +37,7 @@ export function defaultConnectionName(): string {
   return `nuxt-nats@${hostname()}:${process.pid}`
 }
 
-async function buildConnection(cfg: NatsRuntimeConfig): Promise<NatsConnection> {
+async function buildConnection(cfg: NatsRuntimeConfig, manager?: CredentialManager): Promise<NatsConnection> {
   const opts: Record<string, unknown> = {
     maxReconnectAttempts: cfg.maxReconnectAttempts ?? -1,
     // Shown per connection in `nats server report connections` and Synadia Cloud's
@@ -40,7 +45,15 @@ async function buildConnection(cfg: NatsRuntimeConfig): Promise<NatsConnection> 
     name: cfg.name || defaultConnectionName(),
   }
 
-  Object.assign(opts, buildAuthOptions(cfg))
+  if (manager) {
+    opts.authenticator = manager.authenticator()
+    // Two auth errors in a row would otherwise close the connection for good, before a
+    // refresh has had a chance to deliver new credentials.
+    opts.ignoreAuthErrorAbort = true
+  }
+  else {
+    Object.assign(opts, buildAuthOptions(cfg))
+  }
 
   if (cfg.tls && Object.keys(cfg.tls).length) {
     opts.tls = {
@@ -84,10 +97,12 @@ async function drainAndClose() {
     catch {
       // drain may throw if connection already closed
     }
+    await getCredentialManager()?.dispose()
   }
   finally {
     setNatsConnection(undefined)
     setAuthMode(undefined)
+    setCredentialManager(undefined)
     setJetStream(undefined)
     setJetStreamManager(undefined)
     _isClosing = false
@@ -111,24 +126,41 @@ interface NatsRuntimeConfig {
   jsApiPrefix: string
   tls?: { caFile?: string, certFile?: string, keyFile?: string }
   streams: StreamDefinition[]
-  health: { enabled?: boolean, endpoint?: string }
+  credentials?: CredentialsRuntimeConfig
+  health: { enabled?: boolean, endpoint?: string, details?: boolean }
 }
 
 export default defineNitroPlugin(async (nitroApp) => {
   const config = useRuntimeConfig().nats as NatsRuntimeConfig
 
-  const auth = describeAuth(config)
-  setAuthMode(auth.mode)
-  if (auth.jwt) validateJwt(auth.jwt, auth.source)
-
+  let manager: CredentialManager | undefined
   let nc: NatsConnection
   try {
-    nc = await buildConnection(config)
+    const provider = createCredentialsProvider(config.credentials, customCredentialsProvider)
+    if (provider) {
+      manager = new CredentialManager(provider, config.credentials?.refresh, {
+        onRefreshed: _fireCredentialsRefreshed,
+        onError: _fireCredentialsError,
+      })
+      setCredentialManager(manager)
+      setAuthMode(`provider:${provider.name}`)
+      await manager.init()
+    }
+    else {
+      const auth = describeAuth(config)
+      setAuthMode(auth.mode)
+      if (auth.jwt) validateJwt(auth.jwt, auth.source)
+    }
+
+    nc = await buildConnection(config, manager)
     setNatsConnection(nc)
+    manager?.attach(() => nc.reconnect())
     console.log('[nuxt-nats] Connected to NATS')
   }
   catch (err) {
-    console.error('[nuxt-nats] Failed to connect to NATS:', err)
+    console.error(`[nuxt-nats] Failed to connect to NATS: ${describeError(err)}`)
+    await manager?.dispose()
+    setCredentialManager(undefined)
     _fireConnectError(err instanceof Error ? err : new Error(String(err)))
     return
   }
@@ -208,8 +240,11 @@ export function handleStatus(s: Status) {
   else if (s.type === 'error') {
     const err = (s as { error?: Error }).error
     const msg = String(err?.message ?? err ?? '')
-    if (msg.includes('Authorization') || msg.includes('Permissions Violation')) {
+    if (msg.includes('Authorization') || msg.includes('Permissions Violation') || msg.includes('Authentication Expired')) {
       console.error('[nuxt-nats] AUTH ERROR — JWT may be expired or missing permissions:', err)
+      // A provider may already have newer credentials: fetch them before the next reconnect.
+      // A permissions violation is not a credentials problem, so it does not refresh.
+      if (!msg.includes('Permissions Violation')) void getCredentialManager()?.refreshNow('auth-error')
     }
     else {
       console.error('[nuxt-nats] NATS error:', err)

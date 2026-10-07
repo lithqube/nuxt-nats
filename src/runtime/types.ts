@@ -11,3 +11,4 @@
 // Then jsPublish becomes fully typed per subject.
 export type { NatsEvents } from './server/utils/publish'
 export type { NatsConsumerOptions } from './server/utils/consumer'
+export type { NatsCredentials, NatsCredentialsProvider, CredentialsFetchContext } from './server/credentials/types'

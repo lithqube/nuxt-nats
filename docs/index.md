@@ -16,6 +16,7 @@ NATS JetStream integration for Nuxt 4. Server-side publish, typed consumers, KV 
 | [Object Store](./guides/object-store.md) | Blob storage, streaming upload/download |
 | [Agent Fabric](./guides/agents.md) | Host or call AI agents on the Synadia Agent Protocol over NATS |
 | [Typed Events](./guides/typed-events.md) | NatsEvents augmentation, end-to-end type safety |
+| [Credential providers](./guides/credentials-rotation.md) | Fetch and rotate credentials at runtime: Infisical, Synadia Control Plane, custom providers |
 | [Synadia Cloud](./guides/synadia-cloud.md) | Connect to Synadia Cloud: endpoints, `.creds`, plan limits, placement, connection budget |
 | [Deployment](./guides/deployment.md) | Node, Docker, Kubernetes, Vercel, Cloudflare Workers, Bun |
 

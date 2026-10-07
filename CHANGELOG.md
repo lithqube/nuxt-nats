@@ -20,9 +20,19 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 - **Stream `placement`** (`tags`, `cluster`) on stream definitions.
 - **Connection `name`**, defaulting to `nuxt-nats@<hostname>:<pid>`.
 - **Health reports `auth.mode`**: the method in use, never the identity or credentials.
+- **Credential providers.** `nats.credentials` fetches credentials before connecting,
+  refreshes them ahead of expiry (20% of the JWT lifetime, jittered) and reconnects when they
+  change, with no restart. Built in: `infisical` (machine identity via Kubernetes, OIDC or
+  universal auth, over REST — no SDK dependency) and `synadia` (issues creds from the Control
+  Plane). `custom` loads your `defineNatsCredentialsProvider()` file, bundled when
+  `customProvider` is set and selectable at runtime. Failures keep the last good credentials and
+  retry with backoff; the connection keeps retrying through auth errors.
+- **`onCredentialsRefreshed` / `onCredentialsError` hooks** and opt-in `health.details`
+  (provider status, seconds to expiry; never identities or secrets).
 
 ### Changed
 
+- **Node.js `^20.19.0 || >=22.12.0`**, matching `@nuxt/kit` 4.6 (was `>=20.0.0`).
 - Stream provisioning failures caused by account or plan limits (insufficient resources,
   stream count, storage, required `max_bytes`) now log what to check.
 - A build warns when a credential (`creds`, `token`, `pass`, `nkeySeed`, `userJwt`) is set

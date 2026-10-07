@@ -10,6 +10,7 @@ import {
 import { defu } from 'defu'
 import { generateConsumerPlugin } from './consumerTemplate'
 import { synadiaServers } from './synadia'
+import { CREDENTIALS_PROVIDER_ID, generateProviderModule } from './providerTemplate'
 import type { SynadiaCloudOptions } from './synadia'
 
 export type { SynadiaCloudOptions, SynadiaRegion } from './synadia'
@@ -17,7 +18,7 @@ export type { SynadiaCloudOptions, SynadiaRegion } from './synadia'
 // Public runtime types. The published types entry (dist/types.d.mts) re-exports only what
 // this file exports, so without this line `declare module 'nuxt-nats' { interface NatsEvents
 // {...} }` declared a new, unrelated interface and jsPublish never saw the user's subjects.
-export type { NatsEvents, NatsConsumerOptions } from './runtime/types'
+export type { NatsEvents, NatsConsumerOptions, NatsCredentials, NatsCredentialsProvider, CredentialsFetchContext } from './runtime/types'
 
 export interface StreamDefinition {
   name: string
@@ -115,11 +116,80 @@ export interface ModuleOptions {
    * when NUXT_NATS_WORKERS=true.
    */
   consumers?: ConsumerDefinition[]
+  /**
+   * Credentials that change over time, fetched before connecting and refreshed ahead of
+   * expiry with no restart. Secrets in here come from env vars (NUXT_NATS_CREDENTIALS_*).
+   * Without this, the static settings above (creds, credsFile, userJwt, ...) are used.
+   */
+  credentials?: CredentialsOptions
   health?: {
     /** Enable the /api/_nats/health endpoint. Default: true */
     enabled?: boolean
     /** Override the health endpoint path. Default: '/api/_nats/health' */
     endpoint?: string
+    /**
+     * Add credentials status (provider, status, seconds to expiry, last error code) to the
+     * response. Never identities or secrets, but the endpoint is public. Default: false
+     */
+    details?: boolean
+  }
+}
+
+export interface CredentialsOptions {
+  /**
+   * 'static' (default) — the creds / JWT / token settings, read at connect.
+   * 'infisical' — read from an Infisical secret with a machine identity.
+   * 'synadia'  — issue fresh creds from the Synadia Control Plane.
+   * 'custom'   — your provider from `customProvider`.
+   */
+  provider?: 'static' | 'infisical' | 'synadia' | 'custom'
+  /**
+   * Path to a file that default-exports `defineNatsCredentialsProvider({ name, fetch })`,
+   * relative to the server directory or absolute. Bundled whenever set; used when provider
+   * is 'custom', which can also be chosen at runtime with NUXT_NATS_CREDENTIALS_PROVIDER.
+   */
+  customProvider?: string
+  refresh?: {
+    /** Refresh this fraction of the JWT lifetime before expiry. Default: 0.2 */
+    leadRatio?: number
+    /** Bounds of that lead, in seconds. Defaults: 60 and 3600 */
+    minLeadSec?: number
+    maxLeadSec?: number
+    /** Refresh interval for credentials without an expiry. Default: 300 */
+    pollSec?: number
+    /** Retry backoff cap after a failure, in seconds. Default: 60 */
+    maxBackoffSec?: number
+    /** How long boot waits for the first credentials, in seconds. Default: 30 */
+    initTimeoutSec?: number
+  }
+  infisical?: {
+    /** Default: https://app.infisical.com */
+    siteUrl?: string
+    projectId?: string
+    environment?: string
+    /** Default: '/' */
+    secretPath?: string
+    /** Secret holding the `.creds` file (raw or base64) or a bearer user JWT. */
+    secretName?: string
+    auth?: {
+      /** 'universal' (client id + secret), 'kubernetes' (pod service account) or 'oidc'. */
+      method?: 'universal' | 'kubernetes' | 'oidc'
+      identityId?: string
+      clientId?: string
+      /** Env: NUXT_NATS_CREDENTIALS_INFISICAL_AUTH_CLIENT_SECRET */
+      clientSecret?: string
+      /** Identity token file (kubernetes default: the pod's service-account token). */
+      tokenPath?: string
+      /** Identity token value. Env: NUXT_NATS_CREDENTIALS_INFISICAL_AUTH_JWT */
+      jwt?: string
+    }
+  }
+  synadia?: {
+    /** Default: https://cloud.synadia.com/api */
+    apiUrl?: string
+    userId?: string
+    /** A service-account token scoped to this NATS user. Env: NUXT_NATS_CREDENTIALS_SYNADIA_TOKEN */
+    token?: string
   }
 }
 
@@ -131,6 +201,15 @@ const SECRET_OPTIONS = [
   ['nkeySeed', 'NUXT_NATS_NKEY_SEED'],
   ['userJwt', 'NUXT_NATS_USER_JWT'],
 ] as const satisfies ReadonlyArray<readonly [keyof ModuleOptions, string]>
+
+/** Credentials-provider secrets, as [option path, env var]. */
+function literalProviderSecrets(c: CredentialsOptions | undefined): Array<[string, string]> {
+  const found: Array<[string, string]> = []
+  if (c?.infisical?.auth?.clientSecret) found.push(['credentials.infisical.auth.clientSecret', 'NUXT_NATS_CREDENTIALS_INFISICAL_AUTH_CLIENT_SECRET'])
+  if (c?.infisical?.auth?.jwt) found.push(['credentials.infisical.auth.jwt', 'NUXT_NATS_CREDENTIALS_INFISICAL_AUTH_JWT'])
+  if (c?.synadia?.token) found.push(['credentials.synadia.token', 'NUXT_NATS_CREDENTIALS_SYNADIA_TOKEN'])
+  return found
+}
 
 export default defineNuxtModule<ModuleOptions>({
   meta: {
@@ -144,7 +223,7 @@ export default defineNuxtModule<ModuleOptions>({
     maxReconnectAttempts: -1,
     streams: [],
     consumers: [],
-    health: { enabled: true, endpoint: '/api/_nats/health' },
+    health: { enabled: true, endpoint: '/api/_nats/health', details: false },
   },
 
   setup(options, nuxt) {
@@ -171,7 +250,10 @@ export default defineNuxtModule<ModuleOptions>({
     // Values set in nuxt.config are serialized into the build output (.output), so a
     // credential there ships with every artifact. Runtime env vars do not.
     if (!nuxt.options.dev) {
-      const literal = SECRET_OPTIONS.filter(([key]) => options[key])
+      const literal: Array<readonly [string, string]> = [
+        ...SECRET_OPTIONS.filter(([key]) => options[key]),
+        ...literalProviderSecrets(options.credentials),
+      ]
       if (literal.length) {
         console.warn(
           `[nuxt-nats] ${literal.map(([key]) => `nats.${key}`).join(', ')} set in nuxt.config is written into the build output. `
@@ -201,6 +283,38 @@ export default defineNuxtModule<ModuleOptions>({
       jsApiPrefix: options.jsApiPrefix ?? '',
       streams: options.streams,
       health: options.health,
+      // Every leaf pre-seeded so NUXT_NATS_CREDENTIALS_* env vars map at runtime.
+      credentials: {
+        provider: options.credentials?.provider ?? '',
+        refresh: {
+          leadRatio: options.credentials?.refresh?.leadRatio ?? 0,
+          minLeadSec: options.credentials?.refresh?.minLeadSec ?? 0,
+          maxLeadSec: options.credentials?.refresh?.maxLeadSec ?? 0,
+          pollSec: options.credentials?.refresh?.pollSec ?? 0,
+          maxBackoffSec: options.credentials?.refresh?.maxBackoffSec ?? 0,
+          initTimeoutSec: options.credentials?.refresh?.initTimeoutSec ?? 0,
+        },
+        infisical: {
+          siteUrl: options.credentials?.infisical?.siteUrl ?? '',
+          projectId: options.credentials?.infisical?.projectId ?? '',
+          environment: options.credentials?.infisical?.environment ?? '',
+          secretPath: options.credentials?.infisical?.secretPath ?? '',
+          secretName: options.credentials?.infisical?.secretName ?? '',
+          auth: {
+            method: options.credentials?.infisical?.auth?.method ?? '',
+            identityId: options.credentials?.infisical?.auth?.identityId ?? '',
+            clientId: options.credentials?.infisical?.auth?.clientId ?? '',
+            clientSecret: options.credentials?.infisical?.auth?.clientSecret ?? '',
+            tokenPath: options.credentials?.infisical?.auth?.tokenPath ?? '',
+            jwt: options.credentials?.infisical?.auth?.jwt ?? '',
+          },
+        },
+        synadia: {
+          apiUrl: options.credentials?.synadia?.apiUrl ?? '',
+          userId: options.credentials?.synadia?.userId ?? '',
+          token: options.credentials?.synadia?.token ?? '',
+        },
+      },
     })
 
     // Nitro plugin: manages connection lifecycle + SIGTERM drain
@@ -247,7 +361,17 @@ export default defineNuxtModule<ModuleOptions>({
     }
 
     // Keep NATS packages external — bundling breaks native TCP socket
+    // The custom credentials provider, as a virtual module the connection plugin imports
+    // statically (src/providerTemplate.ts explains why not a generated plugin).
+    // Bundled whenever it is set, so the provider can be chosen at runtime
+    // (NUXT_NATS_CREDENTIALS_PROVIDER=custom) without a rebuild.
+    const custom = options.credentials?.customProvider
+    const providerPath = custom ? (isAbsolute(custom) ? custom : join(nuxt.options.serverDir, custom)) : undefined
+
     nuxt.hook('nitro:config', (nitroConfig) => {
+      nitroConfig.virtual ??= {}
+      nitroConfig.virtual[CREDENTIALS_PROVIDER_ID] = generateProviderModule(providerPath)
+
       nitroConfig.externals ??= {}
       nitroConfig.externals.external ??= []
       const natsPackages = [

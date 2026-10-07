@@ -52,7 +52,8 @@ endpoint is used with `transport: 'ws'`, and automatically on Bun. TLS is mandat
 | `userJwt` | `NUXT_NATS_USER_JWT` | Bearer-token users only (created with "bearer token" enabled): the JWT alone authenticates. |
 
 At startup the module decodes the JWT and logs a warning when it expires within 24 hours, and an
-error when it has already expired.
+error when it has already expired. For short-lived, rotated credentials fetched from Infisical or
+the Synadia Control Plane, see [Credential providers](./credentials-rotation.md).
 
 ## Streams on Cloud
 

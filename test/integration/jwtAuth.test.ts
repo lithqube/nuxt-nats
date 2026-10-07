@@ -7,6 +7,7 @@ import { jetstream, jetstreamManager } from '@nats-io/jetstream'
 import { createOperator, createAccount, createUser, encodeOperator, encodeAccount, encodeUser, fmtCreds } from '@nats-io/jwt'
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers'
 import { buildAuthOptions } from '../../src/runtime/server/utils/buildConnectionOptions'
+import { CredentialManager } from '../../src/runtime/server/credentials/manager'
 
 interface JwtAuthTestContext {
   container: StartedTestContainer
@@ -20,6 +21,8 @@ interface JwtAuthTestContext {
   foreignCreds: string
   /** JWT for a bearer-token user: authenticates without signing the nonce. */
   bearerJwt: string
+  /** Issue a `.creds` file for the valid user's key, expiring `ttlSec` from now. */
+  issueCreds: (ttlSec: number) => Promise<string>
 }
 
 let ctx: JwtAuthTestContext
@@ -100,6 +103,13 @@ resolver_preload: {
     creds: new TextDecoder().decode(fmtCreds(uJwt, ukp)),
     foreignCreds: new TextDecoder().decode(fmtCreds(foreignJwt, foreignUkp)),
     bearerJwt,
+    issueCreds: async (ttlSec: number) => {
+      const jwt = await encodeUser('U', ukp, akp, {
+        pub: { allow: ['jwt.>', '_INBOX.>', '$JS.API.>'], deny: [] },
+        sub: { allow: ['jwt.>', '_INBOX.>', '$JS.API.>'], deny: [] },
+      }, { exp: Math.floor(Date.now() / 1000) + ttlSec })
+      return new TextDecoder().decode(fmtCreds(jwt, ukp))
+    },
   }
 }, 90_000)
 
@@ -229,4 +239,61 @@ describe('buildAuthOptions — .creds (Synadia Cloud style) against a JWT-resolv
     expect(nc.isClosed()).toBe(false)
     await nc.drain()
   })
+})
+
+describe('CredentialManager — rotating short-lived credentials against a JWT-resolver NATS server', () => {
+  // 8s JWTs, refreshed half their lifetime before expiry: several expiries inside one test.
+  const TTL = 8
+  const refresh = { leadRatio: 0.5, minLeadSec: 2, maxLeadSec: 10, maxBackoffSec: 2 }
+
+  async function roundTrip(nc: Awaited<ReturnType<typeof connect>>, subject: string) {
+    const sub = nc.subscribe(subject, { max: 1, callback: (_e, m) => { m.respond(m.data) } })
+    const reply = await nc.request(subject, new TextEncoder().encode('ping'), { timeout: 3_000 })
+    sub.unsubscribe()
+    return new TextDecoder().decode(reply.data)
+  }
+
+  it('control: without rotation the server disconnects the user when its JWT expires', async () => {
+    const auth = buildAuthOptions({ token: '', user: '', pass: '', nkeySeed: '', userJwt: '', creds: await ctx.issueCreds(3) })
+    const nc = await connect({ servers: [ctx.servers], ...auth, maxReconnectAttempts: 0 })
+    const statuses: string[] = []
+    ;(async () => {
+      for await (const s of nc.status()) statuses.push(s.type)
+    })()
+    await new Promise(r => setTimeout(r, 5_000))
+    expect(statuses).toContain('disconnect')
+    await nc.close()
+  }, 20_000)
+
+  it('keeps the connection usable across several JWT expiries with no restart', async () => {
+    const issued: number[] = []
+    const manager = new CredentialManager({
+      name: 'rotating',
+      fetch: async () => {
+        issued.push(Date.now())
+        return { creds: await ctx.issueCreds(TTL) }
+      },
+    }, refresh)
+    await manager.init()
+
+    const nc = await connect({
+      servers: [ctx.servers],
+      authenticator: manager.authenticator(),
+      ignoreAuthErrorAbort: true,
+      maxReconnectAttempts: -1,
+      reconnectTimeWait: 250,
+    })
+    manager.attach(() => nc.reconnect())
+
+    // 2.5 JWT lifetimes: every original JWT has expired by the end.
+    await new Promise(r => setTimeout(r, TTL * 2.5 * 1000))
+
+    expect(issued.length).toBeGreaterThanOrEqual(3)
+    expect(nc.isClosed()).toBe(false)
+    expect(await roundTrip(nc, 'jwt.rotate')).toBe('ping')
+    expect(manager.snapshot().status).toBe('ok')
+
+    await manager.dispose()
+    await nc.close()
+  }, 40_000)
 })

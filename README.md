@@ -458,6 +458,10 @@ export default defineNuxtConfig({
     // Consumers compiled into a generated Nitro plugin (see Declarative consumers above)
     consumers: [],
 
+    // Fetch and rotate credentials at runtime instead of the static settings above:
+    // 'static' (default) | 'infisical' | 'synadia' | 'custom'. See docs/guides/credentials-rotation.md
+    credentials: { provider: 'static' },
+
     health: {
       enabled: true,
       endpoint: '/api/_nats/health',
@@ -476,6 +480,8 @@ All `runtimeConfig.nats.*` values can be overridden at runtime. Prefix with `NUX
 | `NUXT_NATS_CREDS` | `.creds` file contents, raw or base64 (Synadia Cloud, `nsc`) |
 | `NUXT_NATS_CREDS_FILE` | Path to a `.creds` file, re-read on every reconnect |
 | `NUXT_NATS_NAME` | Connection name |
+| `NUXT_NATS_CREDENTIALS_PROVIDER` | `static`, `infisical`, `synadia` or `custom` ([guide](docs/guides/credentials-rotation.md)) |
+| `NUXT_NATS_HEALTH_DETAILS` | `true` adds credentials status to the health endpoint |
 | `NUXT_NATS_TOKEN` | Auth token |
 | `NUXT_NATS_USER` | Username |
 | `NUXT_NATS_PASS` | Password |

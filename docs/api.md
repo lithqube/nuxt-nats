@@ -90,6 +90,8 @@ function useNatsHooks(hooks: {
 | `onConnectError` | Initial connection attempt fails on boot |
 | `onReconnect` | Client recovers from a disconnect. Fires once per outage: the first `reconnect` status after a `disconnect` is forwarded, and repeat `reconnect` statuses with no `disconnect` in between are dropped (the client can emit one per retry attempt, nats.js#423) |
 | `onDisconnect` | Client loses its connection to a server. Fires on every `disconnect` status |
+| `onCredentialsRefreshed` | A credentials provider returned usable credentials: `{ expiresAt, changed }` |
+| `onCredentialsError` | A credentials provider fetch failed. The error carries no secret material |
 
 ```ts
 // server/plugins/nats-hooks.ts
@@ -635,3 +637,25 @@ The `agents` array is present only when one or more agents are registered in the
   "status": "disconnected"
 }
 ```
+
+---
+
+## defineNatsCredentialsProvider(provider)
+
+Auto-imported. Types a custom credentials provider for `nats.credentials.customProvider`. See the [Credential providers guide](./guides/credentials-rotation.md).
+
+```ts
+export default defineNatsCredentialsProvider({
+  name: 'vault',
+  async fetch({ reason, signal }) {
+    return { creds: '...' } // or { userJwt, nkeySeed?, expiresAt? }
+  },
+  dispose() {},
+})
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Shown in logs and health |
+| `fetch(ctx)` | `(ctx: { reason: 'initial' \| 'scheduled' \| 'auth-error', signal: AbortSignal }) => Promise<NatsCredentials>` | Return `creds` (`.creds` contents, raw or base64) or `userJwt` (+ `nkeySeed`). `expiresAt` (epoch seconds) overrides the JWT `exp` |
+| `dispose()` | `() => void \| Promise<void>` | Optional, called on shutdown |

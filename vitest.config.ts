@@ -1,6 +1,13 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      // A Nitro virtual module in a real build (src/providerTemplate.ts).
+      '#nuxt-nats/credentials-provider': fileURLToPath(new URL('./test/fixtures/credentials/no-provider.ts', import.meta.url)),
+    },
+  },
   test: {
     exclude: ['test/integration/**', 'test/live/**', 'node_modules/**'],
     // Type-level tests: test/types/*.test-d.ts are type-checked, never executed.
