@@ -32,8 +32,8 @@ describe('useNatsHooks — onConnectError', () => {
 
   it('calls multiple registered onConnectError hooks in order', () => {
     const order: number[] = []
-    useNatsHooks({ onConnectError: () => order.push(1) })
-    useNatsHooks({ onConnectError: () => order.push(2) })
+    useNatsHooks({ onConnectError: () => { order.push(1) } })
+    useNatsHooks({ onConnectError: () => { order.push(2) } })
     _fireConnectError(new Error('fail'))
     expect(order).toEqual([1, 2])
   })

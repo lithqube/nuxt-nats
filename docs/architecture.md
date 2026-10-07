@@ -39,7 +39,7 @@
 Runs at **build time** inside Nuxt's module system. Responsibilities:
 
 - Merge `ModuleOptions` from `nuxt.config.ts` into `runtimeConfig.nats` (private, server-only)
-- Register the connection plugin via `addServerPlugin()`
+- Register the connection plugin via `addNitroPlugin()`
 - When `nats.consumers` is non-empty, generate a second Nitro plugin (`nats-consumers.mjs`, built by `src/consumerTemplate.ts`) that statically imports each handler and calls `defineNatsConsumer()` for it, registered after the connection plugin. Relative handler paths resolve against `nuxt.options.serverDir`. Invalid definitions fail the build, and the array is deliberately not copied into `runtimeConfig`
 - Register server util auto-imports via `addServerImportsDir()`
 - Register the health endpoint via `addServerHandler()`, unless `health.enabled` is `false`

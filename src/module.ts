@@ -1,7 +1,7 @@
 import { join, isAbsolute } from 'node:path'
 import {
   addServerImportsDir,
-  addServerPlugin,
+  addNitroPlugin,
   addServerHandler,
   addTemplate,
   createResolver,
@@ -102,7 +102,7 @@ export default defineNuxtModule<ModuleOptions>({
   meta: {
     name: 'nuxt-nats',
     configKey: 'nats',
-    compatibility: { nuxt: '>=3.0.0' },
+    compatibility: { nuxt: '>=4.0.0' },
   },
 
   defaults: {
@@ -137,7 +137,7 @@ export default defineNuxtModule<ModuleOptions>({
     })
 
     // Nitro plugin: manages connection lifecycle + SIGTERM drain
-    addServerPlugin(resolver.resolve('./runtime/server/plugins/nats'))
+    addNitroPlugin(resolver.resolve('./runtime/server/plugins/nats'))
 
     // Declarative consumers are compiled into a generated Nitro plugin.
     //
@@ -163,7 +163,7 @@ export default defineNuxtModule<ModuleOptions>({
           resolveHandler: (h: string) => (isAbsolute(h) ? h : join(serverDir, h)),
         }),
       })
-      addServerPlugin(generated.dst)
+      addNitroPlugin(generated.dst)
     }
 
     // Auto-import server utils: useNats(), useJetStream(), useKV(), publish()

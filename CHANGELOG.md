@@ -6,6 +6,35 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **Nuxt 4.6 support.** `@nuxt/kit` is now `^4.6.0`, and the module registers its Nitro
+  plugins with `addNitroPlugin()` (kit 4.6 deprecates `addServerPlugin()`). Tested on Nuxt
+  4.6.0, which still runs nitropack 2 and h3 1.
+- **`compatibility.nuxt` is now `>=4.0.0`.** Nuxt 3 reached end-of-life on 2026-07-31 and was
+  never tested.
+- **`@synadia-ai/agents` and `@synadia-ai/agent-service` are now `^0.6.0`.** From 0.6,
+  `extraMetadata` can no longer override `agent`, `owner` or `protocol_version`.
+
+### Added
+
+- **`defineNatsAgent()` accepts `interceptors` and `heartbeatExtras`**, passed through to
+  the Synadia 0.6 `AgentService`.
+
+### Fixed
+
+- **`parseDuration()` type error** under `noUncheckedIndexedAccess`.
+- **Integration tests ran files in parallel.** Vitest 4 removed the `singleFork` option,
+  so it was being ignored; the config now uses `fileParallelism: false`.
+- **The object store chunking test never chunked.** `max_chunk_size` was passed as a
+  bucket option, which ignores it; it is a per-object `put` option. The test now asserts
+  8 chunks.
+- `npm run test:types` passes and runs in CI; CI also runs the unit tests on Node 24.
+
+---
+
 ## [0.1.0-beta.2] — 2026-09-11
 
 ### Status

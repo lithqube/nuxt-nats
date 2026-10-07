@@ -66,8 +66,8 @@ describe('provisionStreams — provision: never / missing', () => {
       { ...baseDef, name: 'D', provision: 'update' },
     ])
     expect(jsm._add).toHaveBeenCalledTimes(2)
-    expect(jsm._add.mock.calls[0][0].name).toBe('B')
-    expect(jsm._add.mock.calls[1][0].name).toBe('D')
+    expect(jsm._add.mock.calls[0]![0].name).toBe('B')
+    expect(jsm._add.mock.calls[1]![0].name).toBe('D')
   })
 })
 
@@ -76,7 +76,7 @@ describe('provisionStreams — provision: startup', () => {
     const jsm = makeJsm()
     await provisionStreams(jsm as any, [{ ...baseDef, provision: 'startup' }])
     expect(jsm._add).toHaveBeenCalledOnce()
-    expect(jsm._add.mock.calls[0][0]).toMatchObject({
+    expect(jsm._add.mock.calls[0]![0]).toMatchObject({
       name: 'DOCUMENTS',
       subjects: ['tenant.*.assessment.>'],
       storage: 'memory',
@@ -87,31 +87,31 @@ describe('provisionStreams — provision: startup', () => {
   it('maps retention: workqueue correctly', async () => {
     const jsm = makeJsm()
     await provisionStreams(jsm as any, [{ ...baseDef, provision: 'startup', retention: 'workqueue' }])
-    expect(jsm._add.mock.calls[0][0].retention).toBe('workqueue')
+    expect(jsm._add.mock.calls[0]![0].retention).toBe('workqueue')
   })
 
   it('maps retention: interest correctly', async () => {
     const jsm = makeJsm()
     await provisionStreams(jsm as any, [{ ...baseDef, provision: 'startup', retention: 'interest' }])
-    expect(jsm._add.mock.calls[0][0].retention).toBe('interest')
+    expect(jsm._add.mock.calls[0]![0].retention).toBe('interest')
   })
 
   it('defaults retention to limits for unknown values', async () => {
     const jsm = makeJsm()
     await provisionStreams(jsm as any, [{ ...baseDef, provision: 'startup', retention: 'bogus' }])
-    expect(jsm._add.mock.calls[0][0].retention).toBe('limits')
+    expect(jsm._add.mock.calls[0]![0].retention).toBe('limits')
   })
 
   it('sets max_age from duration string', async () => {
     const jsm = makeJsm()
     await provisionStreams(jsm as any, [{ ...baseDef, provision: 'startup', maxAge: '1h' }])
-    expect(jsm._add.mock.calls[0][0].max_age).toBe(3_600_000_000_000)
+    expect(jsm._add.mock.calls[0]![0].max_age).toBe(3_600_000_000_000)
   })
 
   it('sets duplicate_window from duration string', async () => {
     const jsm = makeJsm()
     await provisionStreams(jsm as any, [{ ...baseDef, provision: 'startup', duplicateWindow: '5m' }])
-    expect(jsm._add.mock.calls[0][0].duplicate_window).toBe(300_000_000_000)
+    expect(jsm._add.mock.calls[0]![0].duplicate_window).toBe(300_000_000_000)
   })
 
   it('warns and does NOT call update when stream already exists (err_code 10058)', async () => {
@@ -142,8 +142,8 @@ describe('provisionStreams — provision: update', () => {
     const jsm = makeJsm({ addResult: 'exists' })
     await provisionStreams(jsm as any, [{ ...baseDef, provision: 'update' }])
     expect(jsm._update).toHaveBeenCalledOnce()
-    expect(jsm._update.mock.calls[0][0]).toBe('DOCUMENTS')
-    expect(jsm._update.mock.calls[0][1]).toMatchObject({
+    expect(jsm._update.mock.calls[0]![0]).toBe('DOCUMENTS')
+    expect(jsm._update.mock.calls[0]![1]).toMatchObject({
       name: 'DOCUMENTS',
       subjects: ['tenant.*.assessment.>'],
     })

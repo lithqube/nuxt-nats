@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 
 const addServerImportsDir = vi.fn()
-const addServerPlugin = vi.fn()
+const addNitroPlugin = vi.fn()
 const addServerHandler = vi.fn()
 const createResolver = vi.fn(() => ({ resolve: vi.fn((p: string) => `/fake/${p}`) }))
 
 vi.mock('@nuxt/kit', () => ({
   addServerImportsDir,
-  addServerPlugin,
+  addNitroPlugin,
   addServerHandler,
   createResolver,
   defineNuxtModule: <T>(def: T) => def,

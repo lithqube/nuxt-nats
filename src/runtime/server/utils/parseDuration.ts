@@ -15,5 +15,5 @@ const UNITS: Record<string, number> = {
 export function parseDuration(s: string): number {
   const m = s.match(/^(\d+(?:\.\d+)?)(ns|us|ms|[smhd])$/)
   if (!m) throw new Error(`[nuxt-nats] Invalid duration "${s}" — use e.g. "24h", "30m", "7d"`)
-  return Math.round(Number(m[1]) * UNITS[m[2]])
+  return Math.round(Number(m[1]) * UNITS[m[2]!]!)
 }

@@ -88,10 +88,13 @@ describe('useObj', () => {
   })
 
   it('handles larger payloads split across chunks', async () => {
-    const obs = await useObj('obj-test-large', { storage: 'memory', max_chunk_size: 1024 })
+    const obs = await useObj('obj-test-large', { storage: 'memory' })
     const large = Buffer.alloc(8192, 'x') // 8 KB — multiple chunks at 1 KB each
 
-    await obs.put({ name: 'large.bin' }, toReadableStream(large))
+    // max_chunk_size is a per-object put option, not a bucket option
+    await obs.put({ name: 'large.bin', options: { max_chunk_size: 1024 } }, toReadableStream(large))
+    const info = await obs.info('large.bin')
+    expect(info?.chunks).toBe(8)
     const result = await obs.get('large.bin')
 
     expect(result).not.toBeNull()

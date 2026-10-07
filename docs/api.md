@@ -523,8 +523,10 @@ function defineNatsAgent(opts: NatsAgentOptions): NatsAgentHandle
 | `heartbeatIntervalS` | `number` | `30` | Heartbeat cadence in seconds. |
 | `attachmentsOk` | `boolean` | `true` | Whether the prompt endpoint accepts attachments. |
 | `maxPayload` | `string` | broker-negotiated | Omit to advertise `nc.info.max_payload`; an over-large override is clamped to the server limit. |
-| `extraMetadata` | `Record<string, string>` | — | Extra metadata merged into the service metadata. |
+| `extraMetadata` | `Record<string, string>` | — | Extra metadata merged into the service metadata. Cannot override `agent`, `owner` or `protocol_version`. |
 | `extraEndpoints` | `AgentServiceExtraEndpoint[]` | — | Custom controller endpoints (`spawn`/`stop`/`list`); subjects advertised verbatim. |
+| `interceptors` | `RequestInterceptor[]` | — | Run around the prompt handler for every admitted request; throw `RequestRejectedError` before `next()` to refuse. |
+| `heartbeatExtras` | `() => Record<string, unknown>` | — | Extra fields for every heartbeat and `status` reply, read each time one is built. |
 
 **`NatsAgentHandle`:**
 

@@ -4,5 +4,7 @@
     "dist",
     "node_modules",
     "playground",
+    // Checked by vitest typecheck with test/types/tsconfig.json, which maps nuxt-nats to src/module
+    "test/types",
   ]
 }

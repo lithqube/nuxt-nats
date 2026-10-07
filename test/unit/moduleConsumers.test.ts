@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 
-const addServerPlugin = vi.fn()
+const addNitroPlugin = vi.fn()
 const addTemplate = vi.fn((opts: { filename: string }) => ({ dst: `/proj/.nuxt/${opts.filename}` }))
 
 vi.mock('@nuxt/kit', () => ({
   addServerImportsDir: vi.fn(),
-  addServerPlugin,
+  addNitroPlugin,
   addServerHandler: vi.fn(),
   addTemplate,
   createResolver: () => ({ resolve: (p: string) => `/module/${p.replace(/^\.\//, '')}` }),
@@ -61,10 +61,10 @@ describe('module setup — nats.consumers handler resolution', () => {
   })
 
   it('registers the generated plugin after the connection plugin', async () => {
-    addServerPlugin.mockClear()
+    addNitroPlugin.mockClear()
     await generatedPluginSource([{ stream: 'ORDERS', durable: 'billing', handler: 'workers/billing' }])
 
-    const plugins = addServerPlugin.mock.calls.map(call => call[0] as string)
+    const plugins = addNitroPlugin.mock.calls.map(call => call[0] as string)
     expect(plugins[0]).toContain('runtime/server/plugins/nats')
     expect(plugins[1]).toBe('/proj/.nuxt/nats-consumers.mjs')
   })

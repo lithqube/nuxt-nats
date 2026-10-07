@@ -97,8 +97,10 @@ export default defineEventHandler(async (event) => {
 | `heartbeatIntervalS` | `30` | Liveness cadence. |
 | `attachmentsOk` | `true` | Whether the prompt endpoint accepts attachments. |
 | `maxPayload` | broker-negotiated | Omit to advertise `nc.info.max_payload`; an over-large override is clamped down. |
-| `extraMetadata` | — | Extra service metadata keys. |
+| `extraMetadata` | — | Extra service metadata keys (cannot override `agent`, `owner`, `protocol_version`). |
 | `extraEndpoints` | — | Custom `spawn`/`stop`/`list`-style endpoints. |
+| `interceptors` | — | `RequestInterceptor`s run around every admitted prompt (auth, tracing, rate limits). |
+| `heartbeatExtras` | — | Provider of extra heartbeat / `status` fields (e.g. current load). |
 
 ## Lifecycle & shutdown
 

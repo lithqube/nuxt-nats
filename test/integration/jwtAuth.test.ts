@@ -23,12 +23,10 @@ beforeAll(async () => {
   const badUkp = createUser()
 
   const sJwt = await encodeAccount('SYS', skp, {
-    name: 'SYS',
     limits: { conn: -1, subs: -1, data: -1, payload: -1, imports: -1, exports: -1, wildcards: true, leaf: -1 },
   }, { signer: okp })
 
   const aJwt = await encodeAccount('A', akp, {
-    name: 'A',
     limits: {
       conn: -1, subs: -1, data: -1, payload: -1, imports: -1, exports: -1, wildcards: true, leaf: -1,
       mem_storage: -1,
@@ -39,13 +37,11 @@ beforeAll(async () => {
   }, { signer: okp })
 
   const uJwt = await encodeUser('U', ukp, akp, {
-    name: 'U',
     pub: { allow: ['jwt.>', '_INBOX.>', '$JS.API.>'], deny: [] },
     sub: { allow: ['jwt.>', '_INBOX.>', '$JS.API.>'], deny: [] },
   })
 
   const oJwt = await encodeOperator('TEST', okp, {
-    name: 'TEST',
     system_account: skp.getPublicKey(),
   })
 

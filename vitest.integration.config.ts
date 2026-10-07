@@ -3,9 +3,10 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: ['test/integration/**/*.test.ts'],
-    // Run all integration suites in a single fork — containers are expensive
+    // Run the integration suites one file at a time — containers are expensive.
+    // Vitest 4 removed `singleFork`, which had been silently ignored since the upgrade.
     pool: 'forks',
-    singleFork: true,
+    fileParallelism: false,
     testTimeout: 60_000,
     hookTimeout: 60_000,
   },
