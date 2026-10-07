@@ -39,6 +39,9 @@
       ]
     }
   },
+  "bin": {
+    "nuxt-nats-rotate": "./dist/runtime/cli/bin.js"
+  },
   "files": [
     "dist"
   ],
@@ -62,6 +65,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:live": "vitest run --config vitest.live.config.ts",
     "test:coverage": "vitest run --coverage",
+    "gen:synadia": "openapi-typescript openapi/synadia-control-plane.yaml -o openapi/synadia-control-plane.d.ts",
     "test:all": "npm run test && npm run test:integration",
     "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
     "version:print": "scripts/version.sh",
@@ -99,6 +103,7 @@
     "changelogen": "^0.6.2",
     "eslint": "^10.12.0",
     "nuxt": "^4.6.0",
+    "openapi-typescript": "^7.13.0",
     "testcontainers": "^12.2.0",
     "typescript": "~6.0.3",
     "vitest": "^4.1.11",

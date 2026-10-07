@@ -11,6 +11,7 @@ import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainer
 import { buildAuthOptions } from '../../src/runtime/server/utils/buildConnectionOptions'
 import { CredentialManager } from '../../src/runtime/server/credentials/manager'
 import { infisicalProvider } from '../../src/runtime/server/credentials/providers/infisical'
+import { runRotate } from '../../src/runtime/cli/rotate'
 
 interface JwtAuthTestContext {
   container: StartedTestContainer
@@ -372,4 +373,90 @@ describe('infisical provider — over real HTTP, rotating against a JWT-resolver
       server.close()
     }
   }, 40_000)
+})
+
+describe('Tier A end to end — rotator CLI writes to Infisical, the app reads from it', () => {
+  it('keeps an app connected while the rotator issues, verifies and stores fresh creds', async () => {
+    const TTL = 8
+    let secret: string | undefined // the Infisical secret value
+    const cp = { issued: 0 }
+    const json = (res: import('node:http').ServerResponse, body: unknown, status = 200) =>
+      res.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(body))
+
+    // Stand-ins for the Synadia Control Plane and Infisical, on one local server.
+    const server = createServer(async (req, res) => {
+      const url = new URL(req.url!, 'http://x')
+      let body = ''
+      for await (const chunk of req) body += chunk
+      if (url.pathname.startsWith('/cp/')) {
+        if (req.headers.authorization !== 'Bearer sat_rotator') return void res.writeHead(401).end()
+        if (req.method === 'GET' && url.pathname === '/cp/core/beta/nats-users/u1') {
+          return json(res, { id: 'u1', name: 'app', user_public_key: 'U', jwt_expires_in_secs: TTL, account: { id: 'a1' } })
+        }
+        if (req.method === 'POST' && url.pathname === '/cp/core/beta/nats-users/u1/creds') {
+          cp.issued++
+          return void res.writeHead(200, { 'Content-Type': 'text/plain' }).end(await ctx.issueCreds(TTL))
+        }
+        return void res.writeHead(404).end()
+      }
+      if (req.method === 'POST' && url.pathname === '/api/v1/auth/universal-auth/login') return json(res, { accessToken: 'at', expiresIn: 7200 })
+      if (url.pathname === '/api/v4/secrets/NATS_CREDS') {
+        if (req.headers.authorization !== 'Bearer at') return void res.writeHead(401).end()
+        if (req.method === 'GET') return secret ? json(res, { secret: { secretValue: secret } }) : json(res, {}, 404)
+        if (req.method === 'PATCH' || req.method === 'POST') {
+          if (req.method === 'PATCH' && !secret) return json(res, {}, 404)
+          secret = JSON.parse(body).secretValue
+          return json(res, { secret: { secretKey: 'NATS_CREDS' } })
+        }
+      }
+      res.writeHead(404).end()
+    })
+    await new Promise<void>(r => server.listen(0, '127.0.0.1', r))
+    const site = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    const env = {
+      SYNADIA_CLOUD_TOKEN: 'sat_rotator',
+      SYNADIA_API_URL: `${site}/cp`,
+      INFISICAL_SITE_URL: site,
+      INFISICAL_PROJECT_ID: 'p',
+      INFISICAL_ENVIRONMENT: 'prod',
+      INFISICAL_CLIENT_ID: 'cid',
+      INFISICAL_CLIENT_SECRET: 'cs',
+    }
+    // Rotate once half the lifetime has passed; verify against the real server before storing.
+    const rotate = () => runRotate(['--user-id', 'u1', '--min-remaining', `${TTL / 2}s`, '--verify', '--servers', ctx.servers], { env, out: () => {}, err: () => {} })
+
+    expect((await rotate()).result.action).toBe('rotated')
+    expect((await rotate()).result.action).toBe('skipped') // still fresh
+
+    // The app side: Tier A, Infisical provider only, never a Synadia token.
+    const manager = new CredentialManager(infisicalProvider({
+      siteUrl: site,
+      projectId: 'p',
+      environment: 'prod',
+      secretName: 'NATS_CREDS',
+      auth: { method: 'universal', clientId: 'cid', clientSecret: 'cs' },
+    }), { leadRatio: 0.25, minLeadSec: 1, maxLeadSec: 10, maxBackoffSec: 1 })
+    // The rotator on a schedule, like a CronJob every TTL/4.
+    const cron = setInterval(() => void rotate(), (TTL / 4) * 1000)
+    try {
+      await manager.init()
+      const nc = await connect({ servers: [ctx.servers], authenticator: manager.authenticator(), ignoreAuthErrorAbort: true, maxReconnectAttempts: -1, reconnectTimeWait: 250 })
+      manager.attach(() => nc.reconnect())
+      await new Promise(r => setTimeout(r, TTL * 2.5 * 1000))
+
+      expect(cp.issued).toBeGreaterThanOrEqual(3)
+      expect(nc.isClosed()).toBe(false)
+      const sub = nc.subscribe('jwt.tier-a', { max: 1, callback: (_e, m) => { m.respond(m.data) } })
+      const reply = await nc.request('jwt.tier-a', new TextEncoder().encode('ping'), { timeout: 3_000 })
+      sub.unsubscribe()
+      expect(new TextDecoder().decode(reply.data)).toBe('ping')
+      expect(manager.snapshot().status).toBe('ok')
+      await nc.close()
+    }
+    finally {
+      clearInterval(cron)
+      await manager.dispose()
+      server.close()
+    }
+  }, 60_000)
 })

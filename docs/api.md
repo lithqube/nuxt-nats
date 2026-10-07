@@ -659,3 +659,26 @@ export default defineNatsCredentialsProvider({
 | `name` | `string` | Shown in logs and health |
 | `fetch(ctx)` | `(ctx: { reason: 'initial' \| 'scheduled' \| 'auth-error', signal: AbortSignal }) => Promise<NatsCredentials>` | Return `creds` (`.creds` contents, raw or base64) or `userJwt` (+ `nkeySeed`). `expiresAt` (epoch seconds) overrides the JWT `exp` |
 | `dispose()` | `() => void \| Promise<void>` | Optional, called on shutdown |
+
+---
+
+## useSynadiaCloud()
+
+Auto-imported. A typed client for the Synadia Control Plane API. Reads `nats.synadiaApi.url` and the token from `NUXT_NATS_SYNADIA_API_TOKEN`; pass `{ token, apiUrl, timeoutMs, retries }` to override. Use a service-account token scoped to what the app needs.
+
+| Method | Call |
+|---|---|
+| `listTeams()`, `listSystems(teamId)`, `listAccounts(systemId)`, `getAccount(accountId)` | Account structure |
+| `listConnections(accountId, { limit?, state?, user? })` | Live connections |
+| `natsUsers.list(accountId)`, `.get(userId)`, `.create(accountId, user)` | NATS users (`create` fills unlimited `data`/`payload`/`subs` when `jwt_settings` is given) |
+| `natsUsers.issueCreds(userId)`, `.issueBearerJwt(userId)` | Issue credentials (text) |
+| `natsUsers.rotate(userId)` | New nkey; earlier creds stay valid until they expire or are revoked |
+| `natsUsers.listIssuances(userId)` | Issued credentials and their status |
+| `natsUsers.revoke(accountId, userNkeyPublic, before?)`, `.unrevoke(...)` | Reject JWTs for a key issued before `before` (default now) |
+| `streams.list/get/create/update/delete`, `kvBuckets.list/create/delete` | JetStream assets |
+
+Failures throw `SynadiaApiError` with `status`, `operation` and `code` (`unauthorized`, `forbidden`, `not-found`, `conflict`, `rate-limited`, `timeout`, `network`, `http-error`); never the response body. A 429 is retried after `Retry-After`; gateway errors and network failures are retried only for safe methods.
+
+## nuxt-nats-rotate (CLI)
+
+Issues fresh creds for a NATS user and stores them for your apps. See [Credential providers → The rotator](./guides/credentials-rotation.md#the-rotator-nuxt-nats-rotate). `npx nuxt-nats-rotate --help` lists the options.

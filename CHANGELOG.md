@@ -28,6 +28,14 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
   Plane). `custom` loads your `defineNatsCredentialsProvider()` file, bundled when
   `customProvider` is set and selectable at runtime. Failures keep the last good credentials and
   retry with backoff; the connection keeps retrying through auth errors.
+- **Synadia Control Plane client.** `useSynadiaCloud()` (and `createSynadiaClient`) covers
+  teams, systems, accounts, NATS users, creds and bearer JWTs, nkey rotation, issuances,
+  revocations, streams, KV buckets and connections, with curated types checked against the
+  vendored OpenAPI spec. Retries never repeat a create or an issuance after a gateway error.
+- **`nuxt-nats-rotate` CLI.** Issues fresh creds for a NATS user and stores them in Infisical, a
+  file or a custom store; skips while stored creds are fresh, verifies new creds by connecting,
+  rotates and revokes nkeys, and refuses to report success when an Infisical approval policy holds
+  the write. Kubernetes CronJob and GitHub Actions recipes in the credential providers guide.
 - **`onCredentialsRefreshed` / `onCredentialsError` hooks** and opt-in `health.details`
   (provider status, seconds to expiry; never identities or secrets).
 

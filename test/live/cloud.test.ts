@@ -8,6 +8,8 @@ import { parseCreds } from '../../src/runtime/server/utils/parseCreds'
 import { synadiaServers } from '../../src/synadia'
 import type { SynadiaRegion } from '../../src/synadia'
 import { resolveSynadiaToken } from '../../scripts/synadia-token.mjs'
+import { createSynadiaClient } from '../../src/runtime/synadia/client'
+import { runRotate } from '../../src/runtime/cli/rotate'
 
 // Opt-in, with either credential source:
 //   SYNADIA_LIVE=1 SYNADIA_NATS_USER_ID=<id> npm run test:live
@@ -96,5 +98,34 @@ describe.skipIf(!enabled)('Synadia Cloud (live)', () => {
     finally {
       await jsm.streams.delete(name)
     }
+  })
+})
+
+// Control Plane client and rotator against the real API. Read-only apart from issuing creds
+// (an issuance) for SYNADIA_NATS_USER_ID; the rotator runs with --dry-run.
+describe.skipIf(!(env.SYNADIA_LIVE === '1' && viaToken))('Synadia Control Plane (live)', () => {
+  const client = () => createSynadiaClient({ token: pat!, apiUrl })
+
+  it('reads the user, its account and its issuances', async () => {
+    const c = client()
+    const user = await c.natsUsers.get(env.SYNADIA_NATS_USER_ID!)
+    expect(user.id).toBe(env.SYNADIA_NATS_USER_ID)
+    expect(user.user_public_key).toMatch(/^U/)
+    const account = await c.getAccount(user.account.id)
+    expect(account.id).toBe(user.account.id)
+    expect((await c.natsUsers.list(account.id)).some(u => u.id === user.id)).toBe(true)
+    expect(Array.isArray(await c.natsUsers.listIssuances(user.id))).toBe(true)
+    expect((await c.listTeams()).length).toBeGreaterThan(0)
+  })
+
+  it('rotator --dry-run --verify issues creds that connect to Synadia Cloud', async () => {
+    const out: string[] = []
+    const { code, result } = await runRotate(
+      ['--user-id', env.SYNADIA_NATS_USER_ID!, '--store', 'module:test/fixtures/credentials/empty-store.mjs', '--force', '--dry-run', '--verify'],
+      { env: { SYNADIA_CLOUD_TOKEN: pat!, SYNADIA_API_URL: apiUrl }, out: l => out.push(l), err: () => {} },
+    )
+    expect(code).toBe(0)
+    expect(result.action).toBe('dry-run')
+    expect(out.join('')).not.toContain(pat!)
   })
 })

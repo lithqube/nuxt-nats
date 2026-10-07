@@ -482,6 +482,7 @@ All `runtimeConfig.nats.*` values can be overridden at runtime. Prefix with `NUX
 | `NUXT_NATS_NAME` | Connection name |
 | `NUXT_NATS_CREDENTIALS_PROVIDER` | `static`, `infisical`, `synadia` or `custom` ([guide](docs/guides/credentials-rotation.md)) |
 | `NUXT_NATS_HEALTH_DETAILS` | `true` adds credentials status to the health endpoint |
+| `NUXT_NATS_SYNADIA_API_TOKEN` | Control Plane token for `useSynadiaCloud()` |
 | `NUXT_NATS_TOKEN` | Auth token |
 | `NUXT_NATS_USER` | Username |
 | `NUXT_NATS_PASS` | Password |
@@ -493,7 +494,7 @@ All `runtimeConfig.nats.*` values can be overridden at runtime. Prefix with `NUX
 
 The module selects an auth method based on which credentials are set, in this order:
 
-0. **Creds** — `creds` (contents) or `credsFile` (path). The standard format for Synadia Cloud and `nsc generate creds`. A creds file is re-read on every reconnect, so rotating it needs no restart. See the [Synadia Cloud guide](docs/guides/synadia-cloud.md).
+0. **Creds** — `creds` (contents) or `credsFile` (path). For credentials that rotate at runtime (Infisical, the Synadia Control Plane, your own store) and the `nuxt-nats-rotate` CLI, see [Credential providers](docs/guides/credentials-rotation.md). The standard format for Synadia Cloud and `nsc generate creds`. A creds file is re-read on every reconnect, so rotating it needs no restart. See the [Synadia Cloud guide](docs/guides/synadia-cloud.md).
 1. **JWT + NKey (production)** — when both `userJwt` and `nkeySeed` are set, the module uses `jwtAuthenticator(jwt, seed)` from `@nats-io/nats-core`. This is the standard for NATS servers configured with the JWT resolver (`nsc` operator/account/user hierarchy). The JWT is sent during `CONNECT`; the NKey seed is used to sign the server's nonce to prove possession of the private key.
 2. **JWT (unsigned)** — when `userJwt` is set without `nkeySeed`, uses `jwtAuthenticator(jwt)`. The JWT is sent unsigned — usable only against servers explicitly configured to accept unsigned JWTs, such as when identity is pinned out-of-band by operator policy or in test environments.
 3. **NKey only (dev)** — when only `nkeySeed` is set, uses `nkeyAuthenticator(seed)`. For static NKey-based servers without a JWT resolver.

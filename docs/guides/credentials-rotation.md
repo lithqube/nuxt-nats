@@ -9,7 +9,7 @@ restart. Use one when credentials are short-lived or rotated.
 
 | Tier | What the app holds | Who rotates |
 |---|---|---|
-| **A — recommended for production** | Short-lived creds for a least-privilege NATS user, read from Infisical with a platform identity (Kubernetes, OIDC). No static secret in the app. | An external rotator writes fresh creds to Infisical (the rotator CLI ships in a later release; any job that writes the secret works). The app never holds a Synadia token. |
+| **A — recommended for production** | Short-lived creds for a least-privilege NATS user, read from Infisical with a platform identity (Kubernetes, AWS, GCP, Azure, OIDC). No static secret in the app. | [`nuxt-nats-rotate`](#the-rotator-nuxt-nats-rotate) on a schedule writes fresh creds to Infisical. The app never holds a Synadia token. |
 | B — convenience | A Synadia service-account token scoped to one NATS user. | The app issues its own creds from the Control Plane. A leaked token can only mint that user's creds, and deleting it revokes it. |
 | C — simple | A static creds file (`NUXT_NATS_CREDS_FILE`). | You, by replacing the file. It is re-read on every reconnect. |
 
@@ -121,3 +121,106 @@ off by default:
 ```
 
 `status` is `ok`, `stale` (refresh failing, credentials still valid), `expired` or `failed`.
+
+## The rotator: `nuxt-nats-rotate`
+
+The module ships a CLI that issues fresh creds for one NATS user and stores them where your apps
+read them. Run it on a schedule with a **service-account token scoped to that NATS user**
+(`NatsUser:<id>`); it is the only place that token lives.
+
+```bash
+SYNADIA_CLOUD_TOKEN=... \
+INFISICAL_PROJECT_ID=... INFISICAL_ENVIRONMENT=prod INFISICAL_SECRET_PATH=/nats INFISICAL_SECRET_NAME=NATS_CREDS \
+INFISICAL_AUTH_METHOD=kubernetes INFISICAL_IDENTITY_ID=... \
+npx nuxt-nats-rotate --user-id <nats user id> --min-remaining 6h --verify
+```
+
+What a run does:
+
+1. Reads the stored creds. If they expire later than `--min-remaining`, it prints
+   `{"action":"skipped"}` and exits 0, so frequent runs are cheap.
+2. Optionally gives the user a new nkey (`--rotate-nkey`).
+3. Issues creds (`POST /nats-users/{id}/creds`).
+4. With `--verify`, connects to NATS with them before anyone depends on them.
+5. Stores them (base64 in Infisical, raw in a file).
+6. With `--revoke-old`, revokes the previous nkey. Apps still on the old creds get an auth error,
+   refetch from the store and reconnect.
+
+Output is one JSON line (`action`, `expiresAt`, `nkeyRotated`, `revokedOldKey`, `warnings`); exit
+codes are 0 (ok or skipped), 1 (failure, nothing stored) and 2 (usage). Stores: `infisical`
+(default; `INFISICAL_*` env vars mirror the app's settings), `file --file <path>` (atomic, mode
+0600, for a VM using `credsFile`), or `module:<path>` exporting `{ read(), write(value) }`. An
+Infisical change-approval policy makes the write fail rather than report success.
+
+**Timing.** Give the NATS user a JWT lifetime (say 24h), run the rotator every few hours with
+`--min-remaining` at about half the lifetime, and the apps' own refresh (20% of the lifetime early)
+will always find fresh creds waiting.
+
+### Kubernetes CronJob
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: nats-creds-rotate }
+spec:
+  schedule: "0 */4 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: nats-rotator        # an Infisical Kubernetes-auth identity with write access
+          restartPolicy: OnFailure
+          containers:
+            - name: rotate
+              image: node:22-alpine
+              command: ["npx", "-y", "-p", "nuxt-nats", "nuxt-nats-rotate", "--user-id", "$(NATS_USER_ID)", "--min-remaining", "12h", "--verify"]
+              env:
+                - { name: NATS_USER_ID, value: "<nats user id>" }
+                - { name: SYNADIA_CLOUD_TOKEN, valueFrom: { secretKeyRef: { name: synadia-rotator, key: token } } }
+                - { name: INFISICAL_AUTH_METHOD, value: kubernetes }
+                - { name: INFISICAL_IDENTITY_ID, value: "<identity id>" }
+                - { name: INFISICAL_PROJECT_ID, value: "<project id>" }
+                - { name: INFISICAL_ENVIRONMENT, value: prod }
+                - { name: INFISICAL_SECRET_NAME, value: NATS_CREDS }
+```
+
+### GitHub Actions
+
+```yaml
+on:
+  schedule: [{ cron: "0 */4 * * *" }]
+  workflow_dispatch:
+permissions: { id-token: write }   # OIDC login to Infisical, no stored Infisical secret
+jobs:
+  rotate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - id: oidc
+        run: echo "jwt=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=infisical" | jq -r .value)" >> "$GITHUB_OUTPUT"
+      - run: npx -y -p nuxt-nats nuxt-nats-rotate --user-id ${{ vars.NATS_USER_ID }} --min-remaining 12h --verify
+        env:
+          SYNADIA_CLOUD_TOKEN: ${{ secrets.SYNADIA_ROTATOR_TOKEN }}
+          INFISICAL_AUTH_METHOD: oidc
+          INFISICAL_IDENTITY_ID: ${{ vars.INFISICAL_IDENTITY_ID }}
+          INFISICAL_JWT: ${{ steps.oidc.outputs.jwt }}
+          INFISICAL_PROJECT_ID: ${{ vars.INFISICAL_PROJECT_ID }}
+          INFISICAL_ENVIRONMENT: prod
+          INFISICAL_SECRET_NAME: NATS_CREDS
+```
+
+## Managing Synadia Cloud from the app: `useSynadiaCloud()`
+
+A typed Control Plane client for server routes and tasks. Set `NUXT_NATS_SYNADIA_API_TOKEN` to a
+service-account token scoped to what the app needs.
+
+```ts
+const cloud = useSynadiaCloud()
+const user = await cloud.natsUsers.get(userId)
+const issuances = await cloud.natsUsers.listIssuances(userId)
+await cloud.natsUsers.revoke(user.account.id, compromisedKey)
+```
+
+See the [API reference](../api.md#usesynadiacloud) for the full surface.

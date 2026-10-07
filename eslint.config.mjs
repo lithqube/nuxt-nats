@@ -16,6 +16,10 @@ export default createConfigForNuxt({
   },
 })
   .append(
+    // Generated from the vendored Synadia OpenAPI spec (npm run gen:synadia).
+    { ignores: ['openapi/**'] },
+  )
+  .append(
     // Test files need `any` for mocking NATS internals (consume iterators, JsMsg,
     // ConsumerInfo) and use single-line patterns that style rules dislike.
     {

@@ -39,6 +39,8 @@ NATS JetStream integration for Nuxt 4. Server-side publish, typed consumers, KV 
 | [ADR-006](./adr/006-nitro-externals.md) | Mark `@nats-io/*` packages as Nitro externals |
 | [ADR-007](./adr/007-typed-events.md) | `NatsEvents` interface augmentation for typed subjects |
 | [ADR-008](./adr/008-stream-provisioning.md) | Stream provisioning defaults to `'never'`, opt-in per stream |
+| [ADR-009](./adr/009-credential-providers.md) | Credential providers own rotation; no cloud SDKs |
+| [ADR-010](./adr/010-control-plane-client.md) | Curated Control Plane client and an external rotator CLI |
 
 ## Quick reference
 

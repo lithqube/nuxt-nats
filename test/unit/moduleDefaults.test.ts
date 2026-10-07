@@ -201,3 +201,23 @@ describe('module setup — credentials providers', () => {
     expect(msg).not.toContain('SECRET-')
   })
 })
+
+describe('module setup — synadiaApi', () => {
+  it('pre-seeds url and token so NUXT_NATS_SYNADIA_API_* env vars map', async () => {
+    const mod = await import('../../src/module')
+    const mockNuxt = makeMockNuxt()
+    await (mod.default as any).setup({}, mockNuxt as any)
+    expect(mockNuxt.options.runtimeConfig.nats.synadiaApi).toEqual({ url: '', token: '' })
+  })
+
+  it('warns when the API token is set in nuxt.config', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const mod = await import('../../src/module')
+    const mockNuxt = makeMockNuxt()
+    ;(mockNuxt.options as any).dev = false
+    await (mod.default as any).setup({ synadiaApi: { token: 'SECRET-PAT' } }, mockNuxt as any)
+    const msg = warnSpy.mock.calls.map(c => c[0]).join('\n')
+    expect(msg).toContain('NUXT_NATS_SYNADIA_API_TOKEN')
+    expect(msg).not.toContain('SECRET-PAT')
+  })
+})

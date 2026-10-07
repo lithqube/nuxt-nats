@@ -18,7 +18,26 @@ export type { SynadiaCloudOptions, SynadiaRegion } from './synadia'
 // Public runtime types. The published types entry (dist/types.d.mts) re-exports only what
 // this file exports, so without this line `declare module 'nuxt-nats' { interface NatsEvents
 // {...} }` declared a new, unrelated interface and jsPublish never saw the user's subjects.
-export type { NatsEvents, NatsConsumerOptions, NatsCredentials, NatsCredentialsProvider, CredentialsFetchContext } from './runtime/types'
+export type {
+  NatsEvents,
+  NatsConsumerOptions,
+  NatsCredentials,
+  NatsCredentialsProvider,
+  CredentialsFetchContext,
+  SynadiaClient,
+  SynadiaClientOptions,
+  SynadiaAccount,
+  SynadiaNatsUser,
+  SynadiaNatsUserCreate,
+  SynadiaIssuance,
+  SynadiaRevocation,
+  SynadiaStream,
+  SynadiaStreamConfig,
+  SynadiaKvBucket,
+  SynadiaKvBucketConfig,
+  SynadiaTeam,
+  SynadiaSystemInfo,
+} from './runtime/types'
 
 export interface StreamDefinition {
   name: string
@@ -122,6 +141,15 @@ export interface ModuleOptions {
    * Without this, the static settings above (creds, credsFile, userJwt, ...) are used.
    */
   credentials?: CredentialsOptions
+  /**
+   * The Synadia Control Plane API for `useSynadiaCloud()`. Set the token with
+   * NUXT_NATS_SYNADIA_API_TOKEN: a service-account token scoped to what the app needs.
+   */
+  synadiaApi?: {
+    /** Default: https://cloud.synadia.com/api */
+    url?: string
+    token?: string
+  }
   health?: {
     /** Enable the /api/_nats/health endpoint. Default: true */
     enabled?: boolean
@@ -263,6 +291,7 @@ export default defineNuxtModule<ModuleOptions>({
       const literal: Array<readonly [string, string]> = [
         ...SECRET_OPTIONS.filter(([key]) => options[key]),
         ...literalProviderSecrets(options.credentials),
+        ...(options.synadiaApi?.token ? [['synadiaApi.token', 'NUXT_NATS_SYNADIA_API_TOKEN'] as const] : []),
       ]
       if (literal.length) {
         console.warn(
@@ -293,6 +322,7 @@ export default defineNuxtModule<ModuleOptions>({
       jsApiPrefix: options.jsApiPrefix ?? '',
       streams: options.streams,
       health: options.health,
+      synadiaApi: { url: options.synadiaApi?.url ?? '', token: options.synadiaApi?.token ?? '' },
       // Every leaf pre-seeded so NUXT_NATS_CREDENTIALS_* env vars map at runtime.
       credentials: {
         provider: options.credentials?.provider ?? '',

@@ -118,13 +118,24 @@ export function credentialsFromSecret(value: string): NatsCredentials {
   return { creds: v }
 }
 
+export interface InfisicalClient {
+  /** The secret value, or undefined when the secret does not exist. */
+  read(signal: AbortSignal): Promise<string | undefined>
+  /** Update the secret, creating it when missing. Throws when a change-approval policy holds the write. */
+  write(value: string, signal: AbortSignal): Promise<void>
+  /** Forget the cached access token. */
+  reset(): void
+}
+
 /**
- * Reads NATS credentials from an Infisical secret, logging in with a machine identity. The
- * Infisical access token is cached until shortly before it expires.
+ * Infisical access for one secret, logging in with a machine identity. The access token is
+ * cached until a minute before it expires, and dropped after a 401.
  */
-export function infisicalProvider(options: InfisicalProviderOptions, timeoutMs = 10_000): NatsCredentialsProvider {
+export function createInfisicalClient(options: InfisicalProviderOptions, timeoutMs = 10_000): InfisicalClient {
   validate(options)
   const site = (options.siteUrl || 'https://app.infisical.com').replace(/\/$/, '')
+  const secretUrl = `${site}/api/v4/secrets/${encodeURIComponent(options.secretName)}`
+  const scope = { projectId: options.projectId, environment: options.environment, secretPath: options.secretPath || '/' }
   let token: { value: string, expiresAt: number } | undefined
 
   async function login(signal: AbortSignal): Promise<string> {
@@ -138,40 +149,75 @@ export function infisicalProvider(options: InfisicalProviderOptions, timeoutMs =
     })
     const { accessToken, expiresIn } = await res.json() as { accessToken?: string, expiresIn?: number }
     if (!accessToken) fail('bad-response', 'login response has no accessToken')
-    // Renew a minute early so a fetch never starts with a token about to lapse.
+    // Renew a minute early so a request never starts with a token about to lapse.
     token = { value: accessToken, expiresAt: Date.now() + Math.max(0, (expiresIn ?? 0) - 60) * 1000 }
     return accessToken
   }
 
-  return {
-    name: NAME,
-    async fetch({ signal }) {
-      const timeout = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
-      const accessToken = await login(timeout)
-      const q = new URLSearchParams({
-        projectId: options.projectId,
-        environment: options.environment,
-        secretPath: options.secretPath || '/',
+  /** An authenticated request; a 401 drops the cached token so the next call logs in again. */
+  async function authed(url: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
+    const timeout = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+    const accessToken = await login(timeout)
+    try {
+      return await credentialRequest(NAME, url, {
+        ...init,
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
+        signal: timeout,
       })
+    }
+    catch (err) {
+      if (err instanceof CredentialsProviderError && err.status === 401) token = undefined
+      throw err
+    }
+  }
+
+  async function send(method: 'PATCH' | 'POST', value: string, signal: AbortSignal) {
+    const res = await authed(secretUrl, { method, body: JSON.stringify({ ...scope, secretValue: value }) }, signal)
+    const data = await res.json() as { secret?: unknown, approval?: unknown, policyId?: unknown }
+    // With a change-approval policy Infisical answers with an approval request, not the secret.
+    if (!data.secret) fail('approval-required', `writing secret "${options.secretName}" needs approval in Infisical; nothing was written`)
+  }
+
+  return {
+    async read(signal) {
       let res: Response
       try {
-        res = await credentialRequest(NAME, `${site}/api/v4/secrets/${encodeURIComponent(options.secretName)}?${q}`, {
-          headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
-          signal: timeout,
-        })
+        res = await authed(`${secretUrl}?${new URLSearchParams(scope)}`, {}, signal)
       }
       catch (err) {
-        // A revoked or expired session: log in again on the next attempt.
-        if (err instanceof CredentialsProviderError && err.status === 401) token = undefined
+        if (err instanceof CredentialsProviderError && err.status === 404) return undefined
         throw err
       }
       const data = await res.json() as { secret?: { secretValue?: string } }
-      const value = data.secret?.secretValue
-      if (!value) fail('empty-secret', `secret "${options.secretName}" is empty`)
+      return data.secret?.secretValue || undefined
+    },
+    async write(value, signal) {
+      try {
+        await send('PATCH', value, signal)
+      }
+      catch (err) {
+        if (err instanceof CredentialsProviderError && err.status === 404) return send('POST', value, signal)
+        throw err
+      }
+    },
+    reset() {
+      token = undefined
+    },
+  }
+}
+
+/** Reads NATS credentials from an Infisical secret (see createInfisicalClient). */
+export function infisicalProvider(options: InfisicalProviderOptions, timeoutMs = 10_000): NatsCredentialsProvider {
+  const client = createInfisicalClient(options, timeoutMs)
+  return {
+    name: NAME,
+    async fetch({ signal }) {
+      const value = await client.read(signal)
+      if (!value) fail('empty-secret', `secret "${options.secretName}" is empty or missing`)
       return credentialsFromSecret(value)
     },
     dispose() {
-      token = undefined
+      client.reset()
     },
   }
 }

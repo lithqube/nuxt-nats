@@ -16,6 +16,8 @@ export default defineConfig({
       exclude: ['src/**/*.d.ts'],
       thresholds: {
         'src/runtime/server/credentials/**': { statements: 95, branches: 85, functions: 95, lines: 95 },
+        'src/runtime/synadia/**': { statements: 95, branches: 85, functions: 95, lines: 95 },
+        'src/runtime/cli/rotate.ts': { statements: 90, branches: 80, functions: 90, lines: 90 },
       },
     },
     // Type-level tests: test/types/*.test-d.ts are type-checked, never executed.
