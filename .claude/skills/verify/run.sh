@@ -31,6 +31,17 @@ step() { # name, command...
   fi
 }
 
+# `docker info` can hang when the daemon is wedged; give it 10 s (macOS has no `timeout`).
+docker_ok() {
+  docker info >/dev/null 2>&1 & local pid=$!
+  for _ in $(seq 1 20); do
+    kill -0 "$pid" 2>/dev/null || { wait "$pid"; return $?; }
+    sleep 0.5
+  done
+  kill "$pid" 2>/dev/null
+  return 1
+}
+
 # OrbStack: Testcontainers cannot find the runtime strategy without these.
 if [[ -S "$HOME/.orbstack/run/docker.sock" ]]; then
   export DOCKER_HOST="unix://$HOME/.orbstack/run/docker.sock"
@@ -45,10 +56,10 @@ if [[ $QUICK -eq 0 ]]; then
   step "coverage" npm run test:coverage
   step "prepack" npm run prepack
   step "playground" npm run dev:build
-  if docker info >/dev/null 2>&1; then
+  if docker_ok; then
     step "integration" npm run test:integration
   else
-    RESULTS+=("SKIP  integration  Docker not running (open -a OrbStack)")
+    RESULTS+=("SKIP  integration  Docker not responding (start or restart OrbStack)")
     FAILED=1
   fi
 fi

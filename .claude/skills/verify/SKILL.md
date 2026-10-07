@@ -33,7 +33,9 @@ On a failure, read that step's log before changing anything.
 
 ## Environment gotchas
 
-- **Docker is OrbStack.** If integration is `SKIP`, run `open -a OrbStack` and rerun. The script
+- **Docker is OrbStack.** If integration is `SKIP`, run `open -a OrbStack` and rerun. If many
+  integration files fail with "Hook timed out" or `docker ps` hangs, the daemon is wedged: ask the
+  user before restarting OrbStack (it stops their other containers), then rerun. The script
   sets `DOCKER_HOST` and `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` itself; without them Testcontainers
   fails with "Could not find a working container runtime strategy" even when `docker info` works.
 - **Live tests** read the personal access token from the macOS Keychain (service
