@@ -14,7 +14,13 @@ import { existsSync, writeFileSync } from 'node:fs'
 import { KEYCHAIN_SERVICE, resolveSynadiaToken } from './synadia-token.mjs'
 
 const API = (process.env.SYNADIA_API_URL ?? 'https://cloud.synadia.com/api').replace(/\/$/, '')
-const resolved = resolveSynadiaToken()
+let resolved
+try {
+  resolved = resolveSynadiaToken()
+}
+catch (err) {
+  fail(err.message, 2)
+}
 const TOKEN = resolved?.token
 
 function fail(message, code = 1) {

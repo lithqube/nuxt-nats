@@ -12,27 +12,43 @@ import { join } from 'node:path'
 
 export const KEYCHAIN_SERVICE = 'synadia-cloud-pat'
 
-/** @returns {{ token: string, source: string } | undefined} the token and where it came from, or undefined */
+// Synadia Cloud tokens are long; anything this short is a mistyped prompt (e.g. a login
+// password typed at the Keychain prompt). Reject it by source, never echoing any of it.
+const MIN_TOKEN_LENGTH = 20
+
+function checked(token, source) {
+  if (token.length < MIN_TOKEN_LENGTH) {
+    throw new Error(`the token from ${source} is too short to be a Synadia Cloud access token — replace it`
+      + (source.startsWith('macOS Keychain') ? ` (security add-generic-password -U -a "$USER" -s ${KEYCHAIN_SERVICE} -w)` : ''))
+  }
+  return { token, source }
+}
+
+/**
+ * @returns {{ token: string, source: string } | undefined} the token and where it came from, or undefined
+ * @throws {Error} when a source holds a value too short to be a token
+ */
 export function resolveSynadiaToken(env = process.env) {
-  if (env.SYNADIA_CLOUD_TOKEN) return { token: env.SYNADIA_CLOUD_TOKEN.trim(), source: 'SYNADIA_CLOUD_TOKEN' }
+  if (env.SYNADIA_CLOUD_TOKEN) return checked(env.SYNADIA_CLOUD_TOKEN.trim(), 'SYNADIA_CLOUD_TOKEN')
 
   const file = env.SYNADIA_CLOUD_TOKEN_FILE ?? join(homedir(), '.config', 'synadia', 'token')
   if (existsSync(file)) {
     const token = readFileSync(file, 'utf8').trim()
-    if (token) return { token, source: file }
+    if (token) return checked(token, file)
   }
 
   if (process.platform === 'darwin') {
+    let token = ''
     try {
-      const token = execFileSync('security', ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w'], {
+      token = execFileSync('security', ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w'], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
       }).trim()
-      if (token) return { token, source: `macOS Keychain (${KEYCHAIN_SERVICE})` }
     }
     catch {
       // not in the keychain
     }
+    if (token) return checked(token, `macOS Keychain (${KEYCHAIN_SERVICE})`)
   }
   return undefined
 }
