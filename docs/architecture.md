@@ -38,21 +38,27 @@
 
 Runs at **build time** inside Nuxt's module system. Responsibilities:
 
-- Merge `ModuleOptions` from `nuxt.config.ts` into `runtimeConfig.nats` (private, server-only)
+- Merge `ModuleOptions` from `nuxt.config.ts` into `runtimeConfig.nats` (private, server-only), pre-seeding every credential and `credentials.*` / `synadiaApi` leaf with `''` so `NUXT_NATS_*` env vars map at runtime
+- With `nats.synadia`, fill in Synadia Cloud's TLS and WebSocket endpoints (`src/synadia.ts`) unless `servers` / `wsServers` are set
+- Warn on a build when a credential is set literally in `nuxt.config` (it would be serialized into `.output`), and, with `synadia`, about provisioned streams without `maxBytes`
 - Register the connection plugin via `addNitroPlugin()`
 - When `nats.consumers` is non-empty, generate a second Nitro plugin (`nats-consumers.mjs`, built by `src/consumerTemplate.ts`) that statically imports each handler and calls `defineNatsConsumer()` for it, registered after the connection plugin. Relative handler paths resolve against `nuxt.options.serverDir`. Invalid definitions fail the build, and the array is deliberately not copied into `runtimeConfig`
 - Register server util auto-imports via `addServerImportsDir()`
 - Register the health endpoint via `addServerHandler()`, unless `health.enabled` is `false`
+- In the `nitro:config` hook, register the virtual module `#nuxt-nats/credentials-provider` (`src/providerTemplate.ts`): it re-exports `credentials.customProvider` when set, otherwise `undefined`
 - Mark NATS and Synadia packages as Nitro externals so native TCP sockets survive bundling
 
 ### 2. Nitro plugin (`src/runtime/server/plugins/nats.ts`)
 
 Runs **once per server process** when Nitro boots. Responsibilities:
 
-- Log a warning or error when the user JWT is close to expiry or already expired (`validateJwt()`)
-- Establish a singleton `NatsConnection` (TCP via `@nats-io/transport-node`, or WS via `wsconnect`) with the auth method `buildAuthOptions()` selects
+- Resolve credentials:
+  - **Static** (default): `describeAuth()` reports the auth method, and `validateJwt()` warns about a JWT close to expiry (from `userJwt`, `creds` or `credsFile`). `buildAuthOptions()` builds the authenticator.
+  - **Provider** (`credentials.provider` other than `static`): `createCredentialsProvider()` builds it (or takes the virtual module's custom provider), and `CredentialManager.init()` fetches the first credentials **before connecting**. The client gets `manager.authenticator()`, which reads the current credentials on every (re)connect, with `ignoreAuthErrorAbort: true`. After connecting, `manager.attach(() => nc.reconnect())` starts scheduled refreshes.
+- Record the auth mode for the health endpoint (`setAuthMode`)
+- Establish a singleton `NatsConnection` (TCP via `@nats-io/transport-node`, or WS via `wsconnect`), named `nuxt-nats@<hostname>:<pid>` unless `name` is set
 - Create the `JetStreamClient` and `JetStreamManager`, provision declared streams whose `provision` is `'startup'` or `'update'`, and only then publish the client and manager singletons
-- Watch connection status: log disconnect / reconnect / error events (auth failures with an `AUTH ERROR` prefix) and fire the `useNatsHooks()` callbacks, with `onReconnect` gated to once per outage
+- Watch connection status: log disconnect / reconnect / error events (auth failures with an `AUTH ERROR` prefix) and fire the `useNatsHooks()` callbacks, with `onReconnect` gated to once per outage. An authorization or authentication-expired error asks the credential manager for an immediate refresh
 - Register graceful shutdown on the Nitro `close` hook **and** `process.once('SIGTERM'/'SIGINT')`
 
 Nitro calls server plugins in registration order but does not await async ones, so every later plugin, including the generated consumers plugin and your own `server/plugins/`, starts while this one is still connecting. Code that runs at plugin time cannot assume the connection exists. `defineNatsAgent()` waits for the connection, and `defineNatsConsumer()` (and so `defineDeadLetterConsumer()` and `nats.consumers`) waits for the JetStream client, which is published only after streams are provisioned.
@@ -80,18 +86,41 @@ Auto-imported into all `server/` code via `addServerImportsDir`, exported types 
 | `useAgents()` | `Agents` | Discover and prompt agents |
 | `getAgentStatuses()` | `Array<…>` | Used by the health endpoint |
 | `stopAllAgents()` | `Promise<void>` | Called on shutdown |
+| `defineNatsCredentialsProvider(p)` | `NatsCredentialsProvider` | Types a custom credentials provider file |
+| `useSynadiaCloud(opts?)` | `SynadiaClient` | Typed Synadia Control Plane client |
 
 ### 4. Health endpoint (`src/runtime/server/api/health.get.ts`)
 
-A Nitro handler registered at `/api/_nats/health` (configurable). Reports connection status, RTT, JetStream account stats, and registered agents. Disabled by setting `health.enabled: false`.
+A Nitro handler registered at `/api/_nats/health` (configurable). Reports connection status, the auth mode (never identities or secrets), RTT, JetStream account stats, and registered agents. With `health.details`, it adds the credential manager's snapshot. Disabled by setting `health.enabled: false`.
+
+### 5. Credentials (`src/runtime/server/credentials/`)
+
+Nitro-free, so it is unit-testable and shared with the CLI.
+
+| File | Role |
+|---|---|
+| `manager.ts` | `CredentialManager`: single-flight fetch, refresh at `exp − clamp(lifetime × leadRatio, minLeadSec, maxLeadSec)` ±10% jitter, rate-limited reconnect when the credential fingerprint changes, backoff on failure (last good credentials kept), status `pending → ok → stale → expired` (or `failed` at boot) |
+| `index.ts` | `createCredentialsProvider()`: maps `runtimeConfig.nats.credentials` to a provider |
+| `providers/infisical.ts` | `createInfisicalClient()` (machine-identity login, secret read, write with create-on-404) and the `infisical` provider |
+| `providers/synadia.ts` | Issues creds from the Control Plane |
+| `cloud/aws.ts`, `gcp.ts`, `azure.ts` | Workload identity for Infisical, without cloud SDKs (AWS: credential chain + SigV4) |
+| `http.ts`, `redact.ts`, `types.ts` | Error mapping without response bodies, secret redaction, public provider types |
+
+### 6. Synadia Control Plane client and rotator
+
+- `src/runtime/synadia/client.ts` — a `fetch` client over a curated subset of the Control Plane API, with curated types (`types.ts`) checked against the vendored OpenAPI spec (`openapi/`, not published). Public as `useSynadiaCloud()`.
+- `src/runtime/cli/` — `nuxt-nats-rotate` (`bin.ts` → `dist/runtime/cli/bin.js`): `runRotate()` reads the stored creds, issues new ones, optionally verifies and rotates the nkey, writes to a `SecretStore` (`stores.ts`: Infisical, file, custom module) and revokes the old key. See [ADR-010](./adr/010-control-plane-client.md).
 
 ## Connection lifecycle
 
 ```
 Nitro boot (plugins are called in order; async ones are not awaited)
   └─ nats.ts plugin
-       └─ validateJwt()  [if userJwt is set; logs only]
+       └─ credentials:
+            static   → describeAuth() + validateJwt()  [logs only]
+            provider → CredentialManager.init()        [fetch before connect]
        └─ connect() / wsconnect()        ← later plugins start while this is pending
+       └─ manager.attach(nc.reconnect)   [provider only: scheduled refreshes start]
        └─ status() iterator starts (background)
        └─ jetstream() + jetstreamManager()
        └─ provisionStreams() [provision: 'startup' | 'update']
@@ -109,6 +138,7 @@ Shutdown (SIGTERM / SIGINT, or Nitro 'close'; the first one runs, later calls re
   └─ stopAllAgents() → closeAgents()
   └─ stopAllConsumers()     stop pulling; handlers still running are not awaited
   └─ nc.drain()             flush pending publishes and acks, then close
+  └─ credential manager dispose()   [provider only: stop refreshes]
   └─ process.exit(0)        [signal path only]
 ```
 
@@ -146,7 +176,7 @@ Recommended production topology:
 
 ## Singleton pattern and multi-instance safety
 
-The module uses module-level variables (`let _nc`, `let _js`, `let _jsm` in `plugins/_connection.ts`) as the singleton store. This is safe because:
+The module uses module-level variables (`let _nc`, `let _js`, `let _jsm` and the auth mode in `plugins/_connection.ts`, the active manager in `credentials/manager.ts`) as the singleton store. This is safe because:
 
 - Each OS process gets its own module scope
 - Nitro runs one plugin instance per process

@@ -28,16 +28,24 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
   Plane). `custom` loads your `defineNatsCredentialsProvider()` file, bundled when
   `customProvider` is set and selectable at runtime. Failures keep the last good credentials and
   retry with backoff; the connection keeps retrying through auth errors.
-- **Synadia Control Plane client.** `useSynadiaCloud()` (and `createSynadiaClient`) covers
+- **Synadia Control Plane client.** `useSynadiaCloud()` covers
   teams, systems, accounts, NATS users, creds and bearer JWTs, nkey rotation, issuances,
   revocations, streams, KV buckets and connections, with curated types checked against the
-  vendored OpenAPI spec. Retries never repeat a create or an issuance after a gateway error.
+  vendored OpenAPI spec. A create, update or nkey rotation is never retried after a gateway
+  error; issuing creds is (a repeat only records an extra issuance).
 - **`nuxt-nats-rotate` CLI.** Issues fresh creds for a NATS user and stores them in Infisical, a
   file or a custom store; skips while stored creds are fresh, verifies new creds by connecting,
   rotates and revokes nkeys, and refuses to report success when an Infisical approval policy holds
   the write. Kubernetes CronJob and GitHub Actions recipes in the credential providers guide.
 - **`onCredentialsRefreshed` / `onCredentialsError` hooks** and opt-in `health.details`
   (provider status, seconds to expiry; never identities or secrets).
+- **`nats.synadiaApi`** (`url`, token via `NUXT_NATS_SYNADIA_API_TOKEN`) configures
+  `useSynadiaCloud()`.
+- **Public types** for credential providers (`NatsCredentials`, `NatsCredentialsProvider`,
+  `CredentialsFetchContext`) and the Control Plane client (`SynadiaClient`, `SynadiaNatsUser`,
+  …), exported from `nuxt-nats`.
+- **`npm run test:coverage`** (with floors on the credentials, Control Plane and rotator code)
+  and **`npm run test:live`** (opt-in tests against a real Synadia Cloud account).
 
 ### Changed
 
@@ -53,6 +61,9 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 - The API reference listed `max_chunk_size` as a `useObj()` bucket option. It is a
   per-object `put()` option.
+- **Flaky consumer unit tests.** They slept a fixed 200 ms of wall-clock time and assumed the
+  consumer loop had progressed; under CPU starvation one timed out at 5 s. They now wait for
+  what the loop observably did, and the file runs in ~0.3 s instead of 3.4 s.
 
 ---
 

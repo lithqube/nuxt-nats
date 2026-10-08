@@ -7,11 +7,12 @@ JetStream Object Store provides blob storage backed by a JetStream stream. Files
 ```ts
 // server/api/upload.post.ts
 export default defineEventHandler(async (event) => {
-  const data = await readRawBody(event)
+  const data = await readRawBody(event, false) // Buffer, not a string
   if (!data) throw createError({ statusCode: 400, message: 'No body' })
 
   const obs = await useObj('uploads')
-  const info = await obs.put({ name: 'report.pdf' }, data)
+  // putBlob() takes bytes; put() takes a ReadableStream<Uint8Array> (see below)
+  const info = await obs.putBlob({ name: 'report.pdf' }, new Uint8Array(data))
 
   return { name: info.name, size: info.size }
 })
@@ -38,11 +39,12 @@ export default defineEventHandler(async (event) => {
 ## Create a bucket with options
 
 ```ts
+import { nanos } from '@nats-io/nats-core'
+
 const obs = await useObj('assets', {
-  storage: 'file',        // 'file' | 'memory'
+  storage: 'file',             // 'file' | 'memory'
   replicas: 1,
-  max_chunk_size: 1_048_576,   // 1 MB per chunk (default: 128 KB)
-  ttl: 86_400_000,             // entry TTL in ms (24 hours)
+  ttl: nanos(86_400_000),      // entry TTL in NANOseconds (24 hours) — unlike KV, which takes ms
   description: 'User-uploaded assets',
 })
 ```
@@ -52,15 +54,18 @@ const obs = await useObj('assets', {
 ```ts
 const obs = await useObj('uploads')
 
-// Upload from Buffer / Uint8Array
-await obs.put({ name: 'avatar.png' }, imageBuffer)
+// Upload bytes (Buffer / Uint8Array) with putBlob()
+await obs.putBlob({ name: 'avatar.png' }, new Uint8Array(imageBuffer))
 
-// Upload with metadata
-await obs.put({
+// Upload a stream with put(): it only accepts ReadableStream<Uint8Array>
+await obs.put({ name: 'export.csv' }, csvStream)
+
+// Upload with metadata and a custom chunk size (per object, not per bucket)
+await obs.putBlob({
   name: 'document.pdf',
   description: 'Q1 report',
-  headers: { 'Content-Type': 'application/pdf' },
-}, pdfBuffer)
+  options: { max_chunk_size: 1_048_576 },
+}, new Uint8Array(pdfBuffer))
 
 // Get (returns ReadableStream)
 const entry = await obs.get('avatar.png')
@@ -116,10 +121,11 @@ export default defineEventHandler(async () => {
 
 ## Chunking and size limits
 
-Object Store splits large files into chunks. The default chunk size is 128 KB. For large files, increase `max_chunk_size` to reduce the number of JetStream messages:
+Object Store splits large files into chunks. The default chunk size is 128 KB. For large files, increase `max_chunk_size` to reduce the number of JetStream messages. It is set per object when writing, not on the bucket:
 
 ```ts
-await useObj('videos', { max_chunk_size: 8_388_608 })  // 8 MB chunks
+const obs = await useObj('videos')
+await obs.put({ name: 'talk.mp4', options: { max_chunk_size: 8_388_608 } }, videoStream)  // 8 MB chunks
 ```
 
 The maximum object size is limited by the underlying JetStream stream's `max_bytes` setting. Configure this when creating the bucket or via the NATS CLI.

@@ -94,6 +94,8 @@ export default defineEventHandler(async (event) => {
 | `agent` / `owner` / `name` | — | Identity tuple → subject `agents.prompt.{agent}.{owner}.{name}`. |
 | `onPrompt` | — | `(envelope, response) => …`. Stream with `response.send`; ask with `response.ask`. |
 | `subjectToken` | `agent` | Override the subject's 3rd token (e.g. `cc` for `claude-code`). |
+| `description` | — | Service description shown by `nats micro info`. |
+| `version` | — | Harness semver advertised as the service version. |
 | `heartbeatIntervalS` | `30` | Liveness cadence. |
 | `attachmentsOk` | `true` | Whether the prompt endpoint accepts attachments. |
 | `maxPayload` | broker-negotiated | Omit to advertise `nc.info.max_payload`; an over-large override is clamped down. |
@@ -118,4 +120,4 @@ When agents are registered, the health endpoint (`/api/_nats/health`) includes a
 
 ## Versions & stability
 
-The Synadia SDKs are **0.x and explicitly unstable** — pinned to `^0.5.2`. The wrapper is intentionally thin so an API drift is a one-file change; the durable contract is the wire protocol (see the skill). Verify installed versions when upgrading.
+The Synadia SDKs are **0.x and explicitly unstable** — pinned to `^0.6.0`. The wrapper is intentionally thin so an API drift is a one-file change; the durable contract is the wire protocol (see the skill). Verify installed versions when upgrading.

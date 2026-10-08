@@ -28,14 +28,25 @@ The Nuxt app and worker process share the same build output but run with differe
 | Variable | Description | Example |
 |---|---|---|
 | `NUXT_NATS_SERVERS` | Comma-separated server URLs | `nats://a:4222,nats://b:4222` |
+| `NUXT_NATS_WS_SERVERS` | Comma-separated WebSocket URLs | `wss://nats.example.com` |
+| `NUXT_NATS_TRANSPORT` | `auto`, `tcp` or `ws` | `ws` |
+| `NUXT_NATS_NAME` | Connection name (default `nuxt-nats@<hostname>:<pid>`) | `checkout-api` |
+| `NUXT_NATS_CREDS_FILE` | Path to a `.creds` file, re-read on every reconnect | `/run/secrets/nats/user.creds` |
+| `NUXT_NATS_CREDS` | `.creds` contents, raw or base64 | `LS0tLS1CRUdJTi...` |
 | `NUXT_NATS_TOKEN` | Auth token | `s3cr3t` |
 | `NUXT_NATS_USER` | Username | `app` |
 | `NUXT_NATS_PASS` | Password | `s3cr3t` |
 | `NUXT_NATS_USER_JWT` | User JWT credential | `eyJ0eXAi...` |
 | `NUXT_NATS_NKEY_SEED` | NKey seed (Ed25519) | `SUAM...` |
 | `NUXT_NATS_WORKERS` | Enable consumers/agents | `true` |
+| `NUXT_NATS_CREDENTIALS_PROVIDER` | `static`, `infisical`, `synadia` or `custom` | `infisical` |
+| `NUXT_NATS_CREDENTIALS_*` | Any other `nats.credentials` leaf | `NUXT_NATS_CREDENTIALS_INFISICAL_AUTH_IDENTITY_ID` |
+| `NUXT_NATS_HEALTH_DETAILS` | Add credential-provider status to health | `true` |
+| `NUXT_NATS_SYNADIA_API_TOKEN` / `_URL` | Control Plane access for `useSynadiaCloud()` | |
 
-Never set credentials in `nuxt.config.ts` for production — use environment variables or a secrets manager.
+Never set credentials in `nuxt.config.ts` for production — values there (even `process.env.X` read there) are baked into the build output, and the module warns on a build. Use runtime environment variables, a mounted creds file, or a [credentials provider](./credentials-rotation.md).
+
+Requires Node.js `^20.19.0 || >= 22.12.0`. For Synadia Cloud specifics (endpoints, plan limits, the per-instance connection budget) see the [Synadia Cloud guide](./synadia-cloud.md).
 
 > **Multi-server failover:** `NUXT_NATS_SERVERS` accepts a comma-separated list (e.g. `nats://a:4222,nats://b:4222,nats://c:4222`). The module splits the value into an array before passing it to the NATS client. Alternatively, set `servers` as an array in `nuxt.config.ts`. The client handles failover automatically — if one server is unreachable, it reconnects to the next in the list.
 
@@ -193,15 +204,32 @@ spec:
                   key: token
 ```
 
+### Credentials from a Secret volume
+
+Mount the `.creds` file instead of passing a token. The module re-reads the file on every reconnect, and Kubernetes updates a mounted Secret in place, so a rotated credential is picked up without restarting pods:
+
+```yaml
+          env:
+            - name: NUXT_NATS_CREDS_FILE
+              value: /run/secrets/nats/user.creds
+          volumeMounts:
+            - { name: nats-creds, mountPath: /run/secrets/nats, readOnly: true }
+      volumes:
+        - name: nats-creds
+          secret: { secretName: nats-user-creds }   # key: user.creds
+```
+
+For short-lived creds fetched at runtime (Infisical with the pod's service-account identity, no stored secret at all) use a [credentials provider](./credentials-rotation.md), and rotate them with the [`nuxt-nats-rotate` CronJob](./credentials-rotation.md#kubernetes-cronjob).
+
 Set `terminationGracePeriodSeconds` higher for workers than for the app so the connection drain has room to finish before SIGKILL. The `preStop` sleep of 5 seconds gives the load balancer time to stop routing new traffic before SIGTERM arrives.
 
-On `SIGTERM` (or `SIGINT`) the module stops agents, stops the consumer loops, calls `nc.drain()`, then `process.exit(0)`. The drain flushes pending publishes and acks before closing the connection. It does not wait for handlers that are still running: a message whose handler has not acked by the time the connection closes is redelivered after `ackWait`, so handlers should be idempotent. Total shutdown time = preStop (5s) + drain time ≤ terminationGracePeriodSeconds.
+On `SIGTERM` (or `SIGINT`) the module stops agents, stops the consumer loops, calls `nc.drain()`, stops any credential refreshes, then `process.exit(0)`. The drain flushes pending publishes and acks before closing the connection. It does not wait for handlers that are still running: a message whose handler has not acked by the time the connection closes is redelivered after `ackWait`, so handlers should be idempotent. Total shutdown time = preStop (5s) + drain time ≤ terminationGracePeriodSeconds.
 
 ## Vercel / Netlify (serverless)
 
 Publisher-only mode works on serverless platforms. Do not set `NUXT_NATS_WORKERS=true`.
 
-Each function invocation creates a NATS connection, publishes, and disconnects. This adds ~50–200ms cold-start latency per invocation. For high-frequency publish paths, consider a NATS HTTP gateway or Synadia Cloud REST API instead.
+The module connects once per function instance, when it boots, and reuses that connection for every invocation the instance serves. Cold starts pay the connect (~50–200 ms, more with a credentials provider fetching first), and every warm instance holds a connection, which counts against connection limits such as Synadia Cloud's per-plan cap. For very spiky or high-fan-out publish paths, consider a NATS HTTP gateway instead.
 
 Stream provisioning (`provision: 'startup'`) is not recommended on serverless — run provisioning as a one-time setup step instead.
 

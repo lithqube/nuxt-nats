@@ -16,13 +16,14 @@ app never holds a Control Plane token, which is the point of Tier A.
 
 - Vendor the spec in `openapi/` (Apache-2.0, attributed, commit pinned) and generate full types
   there with `npm run gen:synadia`. Neither is published.
-- Ship a hand-written client (`createSynadiaClient`, `useSynadiaCloud()`) over a curated subset:
+- Ship a hand-written client (internally `createSynadiaClient`, public as `useSynadiaCloud()`) over a curated subset:
   teams, systems, accounts, NATS users and their creds, bearer JWTs, nkey rotation, issuances,
   revocations, streams, KV buckets, connections. Its types are small and curated;
   `test/types/synadiaTypes.test-d.ts` checks them against the generated schema so spec drift fails
   the type tests.
-- Retries: 429 always (the server did nothing), 502/503/504 and network errors only for safe
-  methods, so a create or an issuance is never repeated after the server may have run it.
+- Retries: 429 always (the server did nothing); 502/503/504 and network errors for safe methods
+  and for creds issuance, where a repeat only records an extra issuance. A create, update or nkey
+  rotation is never repeated after the server may have run it.
 - Ship `nuxt-nats-rotate`, a CLI built from `src/runtime/cli/`. It skips while stored creds are
   fresh, issues (optionally after an nkey rotation), verifies by connecting, stores to Infisical,
   a file or a custom store, and only then revokes the old key. One JSON line out, exit codes 0/1/2.

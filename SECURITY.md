@@ -26,9 +26,14 @@ Until `1.0.0`, only the latest published version receives security fixes. After 
 
 In scope:
 - The `nuxt-nats` module source code (`src/`)
-- Documented public APIs (`jsPublish`, `corePublish`, `defineNatsConsumer`, `defineDeadLetterConsumer`, `useEphemeralConsumer`, `useNatsHooks`, `useKV`, `useObj`, `defineNatsAgent`, `useAgents`, health endpoint, module options including the declarative `consumers` code generator)
+- Documented public APIs (`jsPublish`, `corePublish`, `defineNatsConsumer`, `defineDeadLetterConsumer`, `useEphemeralConsumer`, `useNatsHooks`, `useKV`, `useObj`, `defineNatsAgent`, `useAgents`, `defineNatsCredentialsProvider`, `useSynadiaCloud`, health endpoint including `health.details`, module options including the declarative `consumers` code generator and the custom credentials provider virtual module)
+- Credential handling: `.creds` parsing, the credential providers (Infisical with Kubernetes / AWS / GCP / Azure / OIDC / universal identity, Synadia Control Plane, custom), secret redaction in logs and errors, and the build-time warnings for secrets in `nuxt.config`
+- The `nuxt-nats-rotate` CLI, including its Infisical, file and module secret stores
+
+Credential leaks are in scope even when partial: a token, JWT, NKey seed or creds file reaching a log line, an error message, the health endpoint or the build output.
 
 Out of scope:
 - Vulnerabilities in upstream `@nats-io/*` packages — please report those to https://github.com/nats-io/nats.js
+- Vulnerabilities in `@synadia-ai/*` packages, the Synadia Control Plane or Infisical services — report those to their maintainers
 - Vulnerabilities in your own NATS server configuration
 - Issues that require an attacker to already have full filesystem or environment access to the Nitro process

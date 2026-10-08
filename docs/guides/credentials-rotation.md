@@ -1,6 +1,6 @@
 # Credential providers and rotation
 
-Static credentials (`NUXT_NATS_CREDS`, `NUXT_NATS_USER_JWT`, ...) are read once at connect.
+Static credentials are fixed for the life of the process: `NUXT_NATS_CREDS`, `NUXT_NATS_USER_JWT` and the others are read once, and only a creds *file* (`NUXT_NATS_CREDS_FILE`) is re-read, on each reconnect.
 A **credentials provider** fetches them from a secret store or the Synadia Control Plane before
 the first connect, refreshes them ahead of expiry, and reconnects with the new ones, with no
 restart. Use one when credentials are short-lived or rotated.
@@ -19,7 +19,11 @@ credential stops working on its own.
 ## Infisical
 
 Store the user's `.creds` file in an Infisical secret (base64 is safest for a multiline value),
-then configure the provider. Non-secret settings can live in `nuxt.config`; secrets come from env.
+then configure the provider. Non-secret settings can live in `nuxt.config` or env
+(`NUXT_NATS_CREDENTIALS_INFISICAL_PROJECT_ID`, `..._ENVIRONMENT`, `..._SECRET_NAME`,
+`..._AUTH_METHOD`, `..._AUTH_IDENTITY_ID`, …); secrets come from env only. Defaults: `siteUrl`
+`https://app.infisical.com`, `secretPath` `/`, `auth.method` `universal`. The secret may also
+hold a bare JWT for a bearer-token user.
 
 ```ts
 // nuxt.config.ts
@@ -120,7 +124,7 @@ off by default:
 "auth": { "mode": "provider:infisical", "provider": "infisical", "status": "ok", "expiresInSec": 20540, "nextRefreshInSec": 16244, "lastRefreshAt": "2026-10-07T21:05:38.851Z", "lastErrorCode": null }
 ```
 
-`status` is `ok`, `stale` (refresh failing, credentials still valid), `expired` or `failed`.
+`status` is `pending` (before the first fetch), `ok`, `stale` (refresh failing, credentials still valid), `expired`, or `failed` (no credentials at boot).
 
 ## The rotator: `nuxt-nats-rotate`
 
@@ -148,8 +152,21 @@ What a run does:
 
 Output is one JSON line (`action`, `expiresAt`, `nkeyRotated`, `revokedOldKey`, `warnings`); exit
 codes are 0 (ok or skipped), 1 (failure, nothing stored) and 2 (usage). Stores: `infisical`
-(default; `INFISICAL_*` env vars mirror the app's settings), `file --file <path>` (atomic, mode
-0600, for a VM using `credsFile`), or `module:<path>` exporting `{ read(), write(value) }`. An
+(default), `file --file <path>` (atomic, mode 0600, for a VM using `credsFile`), or
+`module:<path>` exporting `{ read(), write(value) }`.
+
+Other options: `--token-file` (instead of `SYNADIA_CLOUD_TOKEN`), `--api-url` / `SYNADIA_API_URL`,
+`SYNADIA_NATS_USER_ID` (instead of `--user-id`), `--servers` for `--verify` (default
+`tls://connect.ngs.global`), `--encoding base64|raw`, `--force`, `--dry-run`. Creds without an
+expiry are skipped unless `--force` or `--rotate-nkey` is given. The full table is in the
+[API reference](../api.md#nuxt-nats-rotate-cli).
+
+The Infisical store reads its own env vars: `INFISICAL_SITE_URL`, `INFISICAL_PROJECT_ID`,
+`INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`, `INFISICAL_SECRET_NAME` (default `NATS_CREDS`),
+`INFISICAL_AUTH_METHOD` (default `universal`), `INFISICAL_IDENTITY_ID`, `INFISICAL_CLIENT_ID`,
+`INFISICAL_CLIENT_SECRET`, `INFISICAL_TOKEN_PATH`, `INFISICAL_JWT`, `INFISICAL_AWS_REGION`,
+`INFISICAL_AUDIENCE`, `INFISICAL_MANAGED_IDENTITY_CLIENT_ID`. The rotator's identity needs write
+access to the secret; the apps' identities only read. An
 Infisical change-approval policy makes the write fail rather than report success.
 
 **Timing.** Give the NATS user a JWT lifetime (say 24h), run the rotator every few hours with

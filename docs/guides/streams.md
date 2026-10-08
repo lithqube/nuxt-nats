@@ -63,6 +63,32 @@ Replication factor for the stream across the NATS cluster. Cannot exceed the clu
 
 `replicas: 5` (R5) is the practical maximum — NATS JetStream supports up to 5 replicas per stream. Beyond R5, the Raft consensus overhead outweighs the durability benefit. Most production deployments use R3 (3-node cluster) or R5 (5-node cluster).
 
+On Synadia Cloud, the free plan allows R1 only; R3 needs a paid plan.
+
+### maxBytes
+
+The stream's size limit in bytes. Unset means unbounded (`-1`), which a self-hosted server accepts but **Synadia Cloud rejects** (`account requires a stream config to have max bytes set`). With `nats.synadia` set, the build warns about every provisioned stream without `maxBytes`.
+
+### placement
+
+Where the stream's replicas live: `{ cluster?: string, tags?: string[] }`. Tags must match server tags; on Synadia Cloud use the geo tags, for example:
+
+```ts
+{ name: 'ORDERS', subjects: ['orders.>'], maxBytes: 1_073_741_824, placement: { tags: ['geo:europe'] }, provision: 'startup' }
+```
+
+### When provisioning fails
+
+Failures caused by account or plan limits are logged with what to check:
+
+| Code | Meaning |
+|---|---|
+| 10023 | Insufficient resources: no server matches the placement and replica count (e.g. R3 on a free Synadia Cloud plan) |
+| 10027 | Maximum number of streams reached for the account or plan |
+| 10028 / 10047 | Memory / file storage limit used up |
+| 10113 | The account requires `maxBytes` on every stream |
+| 10058 | A stream with this name exists with a different config (see `provision` modes above) |
+
 ## Managing streams at runtime
 
 Use `useJetStreamManager()` for dynamic stream operations:

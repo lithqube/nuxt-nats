@@ -40,7 +40,7 @@ The module warns on a build when a credential is set there.
 | `global` (default) | `tls://connect.ngs.global` | `wss://connect.ngs.global:443` |
 | `eu`, `us`, `asia`, `west.us`, `east.us` | `tls://<region>.geo.ngs.global` | `wss://<region>.geo.ngs.global:443` |
 
-Explicit `servers` / `wsServers` (or `NUXT_NATS_SERVERS`) override the preset. The WebSocket
+Explicit `servers` / `wsServers` override the preset. At runtime `NUXT_NATS_SERVERS` and `NUXT_NATS_WS_SERVERS` override each list separately: setting only `NUXT_NATS_SERVERS` leaves the WebSocket list on Cloud. The WebSocket
 endpoint is used with `transport: 'ws'`, and automatically on Bun. TLS is mandatory on every endpoint.
 
 ## Credentials
@@ -94,3 +94,5 @@ the limit. Each instance connects with the name `nuxt-nats@<hostname>:<pid>`, or
 ```json
 { "connected": true, "status": "ok", "auth": { "mode": "creds-file" } }
 ```
+
+With a [credentials provider](./credentials-rotation.md) and `health: { details: true }`, `auth` also shows the provider status and seconds until the creds expire.

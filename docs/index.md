@@ -24,7 +24,7 @@ NATS JetStream integration for Nuxt 4. Server-side publish, typed consumers, KV 
 
 | Document | Description |
 |---|---|
-| [API Reference](./api.md) | All auto-imported server utils, types, options |
+| [API Reference](./api.md) | Module options, auto-imported server utils, types, health endpoint, `nuxt-nats-rotate` |
 | [Architecture](./architecture.md) | System design, layers, lifecycle, connection model |
 
 ### Architecture Decision Records
@@ -69,5 +69,6 @@ await kv.put('theme', 'dark')
 
 // server/api/upload.post.ts
 const obs = await useObj('uploads')
-await obs.put({ name: 'file.pdf' }, await readRawBody(event))
+const body = await readRawBody(event, false)
+await obs.putBlob({ name: 'file.pdf' }, body ? new Uint8Array(body) : null)
 ```
