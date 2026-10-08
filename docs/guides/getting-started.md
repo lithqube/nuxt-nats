@@ -2,9 +2,9 @@
 
 ## Prerequisites
 
-- Nuxt 4 project
-- Node.js >= 20 or Bun
-- NATS Server >= 2.10 with JetStream enabled
+- Nuxt 4 project (4.6 tested)
+- Node.js `^20.19.0 || >= 22.12.0`, or Bun
+- NATS Server >= 2.10 with JetStream enabled, **or** a [Synadia Cloud](https://www.synadia.com/cloud) account (see [Using Synadia Cloud instead](#using-synadia-cloud-instead))
 
 ### Start a local NATS server
 
@@ -76,8 +76,9 @@ curl http://localhost:3000/api/_nats/health
   "connected": true,
   "status": "ok",
   "server": "nats://localhost:4222",
+  "auth": { "mode": "anonymous" },
   "rttMs": 1,
-  "jetstream": { "available": true, "streams": 0, "consumers": 0 }
+  "jetstream": { "available": true, "streams": 0, "consumers": 0, "memory": 0, "storage": 0 }
 }
 ```
 
@@ -106,9 +107,29 @@ Restart the dev server — the `DEMO` stream is created automatically. Verify:
 nats stream info DEMO
 ```
 
+## Using Synadia Cloud instead
+
+No local server needed: create a NATS user in your Synadia Cloud account, download its `.creds` file, then:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['nuxt-nats'],
+  nats: { synadia: true },   // geo-routed TLS + WebSocket endpoints
+})
+```
+
+```bash
+NUXT_NATS_CREDS_FILE=./app.creds npm run dev
+```
+
+Streams on Synadia Cloud must set `maxBytes`, and your plan limits connections and streams. The [Synadia Cloud guide](./synadia-cloud.md) covers regions, limits and placement; [Credential providers](./credentials-rotation.md) covers fetching and rotating creds at runtime.
+
 ## Next steps
 
-- [Streams](./streams.md) — configure retention, limits, mirroring
+- [Authentication](./auth.md) — creds files, JWT/NKey, tokens, and why secrets belong in env vars
+- [Synadia Cloud](./synadia-cloud.md) and [Credential providers](./credentials-rotation.md) — managed NATS and rotating credentials
+- [Streams](./streams.md) — configure retention, limits, placement
 - [Consumers](./consumers.md) — set up durable workers
 - [KV Store](./kv.md) — use JetStream KV for shared state
 - [Object Store](./object-store.md) — store and retrieve large files

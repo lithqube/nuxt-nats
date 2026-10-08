@@ -5,7 +5,7 @@
     <section>
       <h2>Health</h2>
       <pre>{{ health ?? 'loading...' }}</pre>
-      <button @click="refreshHealth">
+      <button @click="refreshHealth()">
         Refresh
       </button>
     </section>

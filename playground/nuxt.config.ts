@@ -12,6 +12,8 @@ export default defineNuxtConfig({
 
   nats: {
     servers: ['nats://localhost:4222'],
+    // Bundled example provider; selected at runtime with NUXT_NATS_CREDENTIALS_PROVIDER=custom
+    credentials: { customProvider: 'nats/credentials.ts' },
     streams: [
       {
         name: 'EVENTS',

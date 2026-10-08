@@ -4,6 +4,70 @@ All server utilities are auto-imported in the `server/` directory. No import sta
 
 ---
 
+## Module options (`nats` in `nuxt.config`)
+
+Every option is mirrored in private `runtimeConfig.nats` and can be overridden at runtime with `NUXT_NATS_<OPTION>` (nested keys join with `_`, e.g. `credentials.synadia.token` → `NUXT_NATS_CREDENTIALS_SYNADIA_TOKEN`). **Set credentials only through env vars:** values written in `nuxt.config` are serialized into the build output, and the module warns on a build when one is.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `synadia` | `boolean \| { region?: 'global' \| 'eu' \| 'us' \| 'asia' \| 'west.us' \| 'east.us' }` | — | Synadia Cloud preset: sets `servers` / `wsServers` to the region's TLS and WebSocket endpoints unless they are set explicitly |
+| `servers` | `string[]` | `['nats://localhost:4222']` (or the Synadia endpoint) | TCP server URLs |
+| `wsServers` | `string[]` | `[]` (or the Synadia endpoint) | WebSocket server URLs; falls back to `servers` |
+| `transport` | `'auto' \| 'tcp' \| 'ws'` | `'auto'` | `auto` uses WebSocket on Bun, TCP otherwise |
+| `name` | `string` | `nuxt-nats@<hostname>:<pid>` | Connection name in server reports and Synadia Cloud |
+| `creds` | `string` | — | `.creds` contents, raw or base64 (`NUXT_NATS_CREDS`). Highest auth priority |
+| `credsFile` | `string` | — | Path to a `.creds` file, re-read on every reconnect (`NUXT_NATS_CREDS_FILE`) |
+| `userJwt`, `nkeySeed`, `token`, `user`, `pass` | `string` | — | Other auth methods, in that priority order after creds (see the [auth guide](./guides/auth.md)) |
+| `tls` | `{ caFile?, certFile?, keyFile? }` | — | Server TLS / mTLS |
+| `maxReconnectAttempts` | `number` | `-1` (forever) | |
+| `jsDomain`, `jsApiPrefix` | `string` | — | JetStream domain / API prefix |
+| `streams` | `StreamDefinition[]` | `[]` | Streams to provision; see below |
+| `consumers` | `ConsumerDefinition[]` | `[]` | [Declarative consumers](#module-option-natsconsumers) |
+| `credentials` | `CredentialsOptions` | `{ provider: 'static' }` | Runtime credential provider; see below |
+| `synadiaApi` | `{ url?: string, token?: string }` | `url: https://cloud.synadia.com/api` | For [`useSynadiaCloud()`](#usesynadiacloud); token via `NUXT_NATS_SYNADIA_API_TOKEN` |
+| `health` | `{ enabled?, endpoint?, details? }` | `true`, `/api/_nats/health`, `false` | `details` adds credential-provider status |
+
+**`StreamDefinition`:** `name`, `subjects`, `retention` (`'limits' \| 'workqueue' \| 'interest'`, default `limits`), `storage` (`'file' \| 'memory'`, default `file`), `replicas` (default 1), `maxAge` / `duplicateWindow` (Go durations such as `'7d'`), `maxBytes` (default unbounded; required on Synadia Cloud), `placement` (`{ cluster?, tags? }`, e.g. `tags: ['geo:europe']`), `provision` (`'startup' \| 'update' \| 'never'`, default `never`). See the [streams guide](./guides/streams.md).
+
+**`CredentialsOptions`** (see the [credential providers guide](./guides/credentials-rotation.md)):
+
+| Key | Default | Description |
+|---|---|---|
+| `provider` | `'static'` | `'static'` (the auth options above), `'infisical'`, `'synadia'` or `'custom'` |
+| `customProvider` | — | File default-exporting [`defineNatsCredentialsProvider()`](#definenatscredentialsproviderprovider), relative to the server directory. Bundled whenever set |
+| `refresh.leadRatio` / `minLeadSec` / `maxLeadSec` | `0.2` / `60` / `3600` | Refresh this fraction of the JWT lifetime early, clamped to these bounds (±10% jitter) |
+| `refresh.pollSec` | `300` | Refresh interval for credentials without an expiry |
+| `refresh.maxBackoffSec` | `60` | Retry backoff cap after a failure |
+| `refresh.initTimeoutSec` | `30` | How long boot waits for the first credentials |
+| `infisical.siteUrl` | `https://app.infisical.com` | |
+| `infisical.projectId`, `environment`, `secretName` | — | Required. The secret holds the `.creds` file (raw or base64) or a bearer JWT |
+| `infisical.secretPath` | `/` | |
+| `infisical.auth.method` | `'universal'` | `'kubernetes'`, `'aws'`, `'gcp'`, `'azure'`, `'oidc'` or `'universal'` |
+| `infisical.auth.identityId` | — | Machine identity id (every method but `universal`) |
+| `infisical.auth.clientId`, `clientSecret` | — | `universal` only; secret via `NUXT_NATS_CREDENTIALS_INFISICAL_AUTH_CLIENT_SECRET` |
+| `infisical.auth.tokenPath`, `jwt` | — | Identity token file / value (`kubernetes` defaults to the pod's service-account token; required for `oidc`) |
+| `infisical.auth.region` | `AWS_REGION` → `AWS_DEFAULT_REGION` → EC2 metadata | `aws` |
+| `infisical.auth.audience` | `identityId` (gcp) / `https://management.azure.com/` (azure) | |
+| `infisical.auth.managedIdentityClientId` | — | `azure`, user-assigned identity |
+| `synadia.apiUrl` | `https://cloud.synadia.com/api` | |
+| `synadia.userId`, `token` | — | NATS user to issue creds for; a service-account token scoped to that user (`NUXT_NATS_CREDENTIALS_SYNADIA_TOKEN`) |
+
+## Exported types
+
+Import from `nuxt-nats`:
+
+```ts
+import type {
+  ModuleOptions, StreamDefinition, ConsumerDefinition, CredentialsOptions, SynadiaCloudOptions, SynadiaRegion,
+  NatsEvents, NatsConsumerOptions,
+  NatsCredentials, NatsCredentialsProvider, CredentialsFetchContext,
+  SynadiaClient, SynadiaClientOptions, SynadiaAccount, SynadiaNatsUser, SynadiaNatsUserCreate, SynadiaIssuance,
+  SynadiaRevocation, SynadiaStream, SynadiaStreamConfig, SynadiaKvBucket, SynadiaKvBucketConfig, SynadiaTeam, SynadiaSystemInfo,
+} from 'nuxt-nats'
+```
+
+---
+
 ## useNats()
 
 Returns the singleton `NatsConnection`. Throws if the connection has not been established (i.e., the module failed to connect on boot).
@@ -82,6 +146,8 @@ function useNatsHooks(hooks: {
   onConnectError?: (err: Error) => void | Promise<void>
   onReconnect?: (server: string) => void | Promise<void>
   onDisconnect?: (server: string) => void | Promise<void>
+  onCredentialsRefreshed?: (info: { expiresAt?: number, changed: boolean }) => void | Promise<void>
+  onCredentialsError?: (err: Error) => void | Promise<void>
 }): void
 ```
 
@@ -90,6 +156,8 @@ function useNatsHooks(hooks: {
 | `onConnectError` | Initial connection attempt fails on boot |
 | `onReconnect` | Client recovers from a disconnect. Fires once per outage: the first `reconnect` status after a `disconnect` is forwarded, and repeat `reconnect` statuses with no `disconnect` in between are dropped (the client can emit one per retry attempt, nats.js#423) |
 | `onDisconnect` | Client loses its connection to a server. Fires on every `disconnect` status |
+| `onCredentialsRefreshed` | A credentials provider returned usable credentials: `{ expiresAt, changed }` |
+| `onCredentialsError` | A credentials provider fetch failed. The error carries no secret material |
 
 ```ts
 // server/plugins/nats-hooks.ts
@@ -258,8 +326,7 @@ function useObj(bucket: string, opts?: Partial<ObjectStoreOptions>): Promise<Obj
 |---|---|---|
 | `storage` | `'file' \| 'memory'` | Storage backend. Default: `'file'` |
 | `replicas` | `number` | Replication factor. Default: 1 |
-| `max_chunk_size` | `number` | Chunk size in bytes. Default: 131072 (128 KB) |
-| `ttl` | `number` | Entry TTL in ms. Default: none |
+| `ttl` | `Nanos` | Entry TTL in **nanoseconds** (use `nanos(ms)` from `@nats-io/nats-core`). Default: none |
 | `description` | `string` | Human-readable description |
 
 **ObjectStore methods:**
@@ -267,7 +334,8 @@ function useObj(bucket: string, opts?: Partial<ObjectStoreOptions>): Promise<Obj
 ```ts
 const obs = await useObj('uploads')
 
-await obs.put(meta, data)     // meta: ObjectStoreMeta, data: Uint8Array | ReadableStream
+await obs.put(meta, stream)   // stream: ReadableStream<Uint8Array>
+await obs.putBlob(meta, bytes) // bytes: Uint8Array (wrap a Buffer: new Uint8Array(buf))
 await obs.get(name)           // ObjectResult | null
 await obs.info(name)          // ObjectInfo | null
 await obs.delete(name)        // void
@@ -523,8 +591,10 @@ function defineNatsAgent(opts: NatsAgentOptions): NatsAgentHandle
 | `heartbeatIntervalS` | `number` | `30` | Heartbeat cadence in seconds. |
 | `attachmentsOk` | `boolean` | `true` | Whether the prompt endpoint accepts attachments. |
 | `maxPayload` | `string` | broker-negotiated | Omit to advertise `nc.info.max_payload`; an over-large override is clamped to the server limit. |
-| `extraMetadata` | `Record<string, string>` | — | Extra metadata merged into the service metadata. |
+| `extraMetadata` | `Record<string, string>` | — | Extra metadata merged into the service metadata. Cannot override `agent`, `owner` or `protocol_version`. |
 | `extraEndpoints` | `AgentServiceExtraEndpoint[]` | — | Custom controller endpoints (`spawn`/`stop`/`list`); subjects advertised verbatim. |
+| `interceptors` | `RequestInterceptor[]` | — | Run around the prompt handler for every admitted request; throw `RequestRejectedError` before `next()` to refuse. |
+| `heartbeatExtras` | `() => Record<string, unknown>` | — | Extra fields for every heartbeat and `status` reply, read each time one is built. |
 
 **`NatsAgentHandle`:**
 
@@ -610,6 +680,7 @@ GET /api/_nats/health   (path configurable via nats.health.endpoint)
   "connected": true,
   "status": "ok",
   "server": "nats://localhost:4222",
+  "auth": { "mode": "creds-file" },
   "rttMs": 1,
   "jetstream": {
     "available": true,
@@ -624,6 +695,10 @@ GET /api/_nats/health   (path configurable via nats.health.endpoint)
 }
 ```
 
+`auth.mode` is always present: `creds`, `creds-file`, `jwt-nkey`, `jwt`, `nkey`, `token`, `user-pass`, `anonymous`, or `provider:<name>` with a credentials provider. It never carries an identity or secret.
+
+With `health: { details: true }` (`NUXT_NATS_HEALTH_DETAILS=true`) and a provider active, `auth` also includes `provider`, `status` (`pending`, `ok`, `stale`, `expired` or `failed`), `expiresInSec`, `nextRefreshInSec`, `lastRefreshAt` and `lastErrorCode`. The endpoint is public, so this is off by default.
+
 The `agents` array is present only when one or more agents are registered in the process (see [`defineNatsAgent`](#definenatsagentopts)).
 
 **Response — disconnected:**
@@ -634,3 +709,72 @@ The `agents` array is present only when one or more agents are registered in the
   "status": "disconnected"
 }
 ```
+
+---
+
+## defineNatsCredentialsProvider(provider)
+
+Auto-imported. Types a custom credentials provider for `nats.credentials.customProvider`. See the [Credential providers guide](./guides/credentials-rotation.md).
+
+```ts
+export default defineNatsCredentialsProvider({
+  name: 'vault',
+  async fetch({ reason, signal }) {
+    return { creds: '...' } // or { userJwt, nkeySeed?, expiresAt? }
+  },
+  dispose() {},
+})
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Shown in logs and health |
+| `fetch(ctx)` | `(ctx: { reason: 'initial' \| 'scheduled' \| 'auth-error', signal: AbortSignal }) => Promise<NatsCredentials>` | Return `creds` (`.creds` contents, raw or base64) or `userJwt` (+ `nkeySeed`). `expiresAt` (epoch seconds) overrides the JWT `exp` |
+| `dispose()` | `() => void \| Promise<void>` | Optional, called on shutdown |
+
+---
+
+## useSynadiaCloud()
+
+Auto-imported. A typed client for the Synadia Control Plane API. Reads `nats.synadiaApi.url` (`NUXT_NATS_SYNADIA_API_URL`) and the token from `NUXT_NATS_SYNADIA_API_TOKEN`; pass `{ token, apiUrl, timeoutMs, retries }` to override (defaults: 15000 ms per request, 2 retries). The client is cached per URL and token. Use a service-account token scoped to what the app needs.
+
+| Method | Call |
+|---|---|
+| `listTeams()`, `listSystems(teamId)`, `listAccounts(systemId)`, `getAccount(accountId)` | Account structure |
+| `listConnections(accountId, { limit?, state?, user? })` | Live connections |
+| `natsUsers.list(accountId)`, `.get(userId)`, `.create(accountId, user)` | NATS users (`create` fills unlimited `data`/`payload`/`subs` when `jwt_settings` is given) |
+| `natsUsers.issueCreds(userId)`, `.issueBearerJwt(userId)` | Issue credentials (text) |
+| `natsUsers.rotate(userId)` | New nkey; earlier creds stay valid until they expire or are revoked |
+| `natsUsers.listIssuances(userId)` | Issued credentials and their status |
+| `natsUsers.revoke(accountId, userNkeyPublic, before?)`, `.unrevoke(...)` | Reject JWTs for a key issued before `before` (default now) |
+| `streams.list/get/create/update/delete`, `kvBuckets.list/create/delete` | JetStream assets |
+
+Failures throw an error with `name === 'SynadiaApiError'` and `status`, `operation` and `code` (`unauthorized`, `forbidden`, `not-found`, `conflict`, `rate-limited`, `timeout`, `network`, `http-error`); never the response body. A 429 is retried after `Retry-After`. Gateway errors (502/503/504) and network failures are retried for GET, PUT and DELETE and for `issueCreds` / `issueBearerJwt` (a repeated issuance only records an extra issuance), never for creates, updates or `rotate`.
+
+## nuxt-nats-rotate (CLI)
+
+Issues fresh creds for a NATS user and stores them for your apps. See [Credential providers → The rotator](./guides/credentials-rotation.md#the-rotator-nuxt-nats-rotate) for scheduling recipes.
+
+```bash
+npx -p nuxt-nats nuxt-nats-rotate --user-id <id> [options]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--user-id <id>` | `SYNADIA_NATS_USER_ID` | NATS user to issue creds for |
+| `--token-file <path>` | `SYNADIA_CLOUD_TOKEN` | Control Plane token (a service-account token scoped to the user) |
+| `--api-url <url>` | `SYNADIA_API_URL` or `https://cloud.synadia.com/api` | |
+| `--store <kind>` | `infisical` | `infisical` (`INFISICAL_*` env), `file`, or `module:<path>` default-exporting `{ read(), write(value) }` |
+| `--file <path>` | — | For `--store file`; written atomically with mode 0600 |
+| `--encoding <enc>` | `base64` for infisical, else `raw` | |
+| `--min-remaining <dur>` | `6h` | Skip while the stored creds expire later than this. Creds without an expiry are skipped unless forced |
+| `--force` | | Issue even when the stored creds are fresh |
+| `--rotate-nkey` | | Give the user a new nkey first |
+| `--revoke-old` | | With `--rotate-nkey`: revoke the previous key after storing |
+| `--verify` | | Connect with the new creds before storing them |
+| `--servers <urls>` | `tls://connect.ngs.global` | For `--verify` |
+| `--dry-run` | | Issue and verify, but store and revoke nothing |
+
+**Infisical store env vars:** `INFISICAL_SITE_URL`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`, `INFISICAL_SECRET_NAME` (default `NATS_CREDS`), `INFISICAL_AUTH_METHOD` (default `universal`), `INFISICAL_IDENTITY_ID`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `INFISICAL_TOKEN_PATH`, `INFISICAL_JWT`, `INFISICAL_AWS_REGION`, `INFISICAL_AUDIENCE`, `INFISICAL_MANAGED_IDENTITY_CLIENT_ID`.
+
+**Output:** one JSON line, `{ action: 'skipped' | 'rotated' | 'dry-run' | 'error', userId, expiresAt, nkeyRotated, revokedOldKey, code?, warnings? }`. **Exit codes:** 0 ok or skipped, 1 failure (nothing stored), 2 usage error.

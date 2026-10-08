@@ -31,8 +31,17 @@ npm run test:types
 # Lint
 npm run lint
 
-# Coverage (requires @vitest/coverage-v8, already installed)
-npx vitest run --coverage
+# Coverage (floors on credentials/**, synadia/**, cli/rotate.ts)
+npm run test:coverage
+
+# Full gate as one pass/fail table (--quick: lint/unit/types; --live: + Synadia Cloud)
+.claude/skills/verify/run.sh
+
+# Live tests against a real Synadia Cloud account (skipped unless SYNADIA_LIVE=1)
+SYNADIA_LIVE=1 SYNADIA_NATS_USER_ID=<id> npm run test:live
+
+# Regenerate the full Control Plane types after updating openapi/synadia-control-plane.yaml
+npm run gen:synadia
 
 # Build the distributable module
 npm run prepack
@@ -61,15 +70,15 @@ Pre-releases have been on the `beta` dist-tag since 0.1.0-beta.1. Do not run `ve
 3. Auto-imports from `src/runtime/server/utils/` — all utils, and their exported types, are available without imports in `server/`
 4. A health route handler (`src/runtime/server/api/health.get.ts`), unless `health.enabled` is `false`
 
-It also marks the `@nats-io/*` and `@synadia-ai/*` packages as Nitro externals in the `nitro:config` hook.
+In the `nitro:config` hook it registers the virtual module `#nuxt-nats/credentials-provider` (see [Credential providers](#credential-providers)) and marks the `@nats-io/*` and `@synadia-ai/*` packages as Nitro externals. With `nats.synadia` set and no explicit `servers`, it fills in the Synadia Cloud endpoints (`src/synadia.ts`). It warns on a build when a credential is set literally in `nuxt.config` (it would be serialized into `.output`), and, with `synadia`, about provisioned streams without `maxBytes`.
 
-The connection plugin validates the user JWT, connects, provisions declared streams, then publishes the JetStream client and manager (`_js`/`_jsm`), and registers SIGTERM/SIGINT handlers. The Nitro `close` hook is also registered but is unreliable (nitrojs/nitro#4015) — the manual signal handlers are the real shutdown path. `drainAndClose()` runs `stopAllAgents()` → `closeAgents()` → `stopAllConsumers()` → `nc.drain()`, each step error-isolated.
+The connection plugin resolves credentials (a `CredentialManager` when `nats.credentials.provider` is not `static`, otherwise `describeAuth()` + `validateJwt()` on the static settings), connects, provisions declared streams, then publishes the JetStream client and manager (`_js`/`_jsm`), and registers SIGTERM/SIGINT handlers. The Nitro `close` hook is also registered but is unreliable (nitrojs/nitro#4015) — the manual signal handlers are the real shutdown path. `drainAndClose()` runs `stopAllAgents()` → `closeAgents()` → `stopAllConsumers()` → `nc.drain()` → credential manager `dispose()`, each step error-isolated.
 
 **Nitro (nitropack 2) calls server plugins in order without awaiting async ones.** Every plugin after `nats.ts`, the generated consumers plugin and the app's own `server/plugins/` included, runs while the connection is still pending, so code that runs at plugin time must not assume `_nc`/`_js` exist. `defineNatsAgent()` polls `getNatsConnection()` and `defineNatsConsumer()` polls `getJetStream()`, both every 250 ms, before starting. `_js`/`_jsm` are set only after `provisionStreams()`, so a consumer that starts at boot never looks up its durable on a stream that is still being created.
 
 ### Singleton isolation for testing
 
-`_nc`, `_js`, and `_jsm` live in `src/runtime/server/plugins/_connection.ts` — a file with **no Nitro imports**. This is the critical design decision: importing from `nats.ts` in tests would pull in `nitropack/runtime` (and `#nitro-internal-virtual/storage`) and crash. All utils and tests import from `_connection.ts` directly.
+`_nc`, `_js`, `_jsm` (and the auth mode shown by health) live in `src/runtime/server/plugins/_connection.ts` — a file with **no Nitro imports**. This is the critical design decision: importing from `nats.ts` in tests would pull in `nitropack/runtime` (and `#nitro-internal-virtual/storage`) and crash. All utils and tests import from `_connection.ts` directly.
 
 `_setConnectionForTesting(nc, js, jsm)` is the integration test entry point — it wires a real Testcontainers connection into the singletons without touching the Nitro plugin.
 
@@ -77,9 +86,9 @@ The exceptions are `test/unit/statusHandling.test.ts` (for `handleStatus()`) and
 
 ### Connection lifecycle hooks
 
-`useNatsHooks()` (in `utils/useNatsHooks.ts`) registers callbacks via module-level arrays `_connectErrorHooks`, `_reconnectHooks`, `_disconnectHooks`. The Nitro plugin's `handleStatus()` and connect-error catch call the corresponding `_fire*()` functions. Hook errors are caught and silently discarded — they must never affect module behavior.
+`useNatsHooks()` (in `utils/useNatsHooks.ts`) registers callbacks via module-level arrays `_connectErrorHooks`, `_reconnectHooks`, `_disconnectHooks`, `_credentialsRefreshedHooks`, `_credentialsErrorHooks`. The Nitro plugin's `handleStatus()` and connect-error catch call the corresponding `_fire*()` functions; the credential manager's events fire the two credentials hooks. Hook errors are caught and silently discarded — they must never affect module behavior.
 
-`handleStatus()` forwards `reconnect` only on the disconnect → reconnect transition (the `_wasDisconnected` flag), because the client emits a `reconnect` status per retry attempt (nats.js#423); `disconnect` fires every time. Status errors whose message contains `Authorization` or `Permissions Violation` are logged with an `AUTH ERROR` prefix.
+`handleStatus()` forwards `reconnect` only on the disconnect → reconnect transition (the `_wasDisconnected` flag), because the client emits a `reconnect` status per retry attempt (nats.js#423); `disconnect` fires every time. Status errors whose message contains `Authorization`, `Permissions Violation` or `Authentication Expired` are logged with an `AUTH ERROR` prefix; all but permission violations also trigger a credentials refresh when a provider is active.
 
 `_clearNatsHooks()` and `_resetStatusStateForTests()` are exposed for tests only — call them in `beforeEach`.
 
@@ -110,6 +119,20 @@ The async message loop runs in a detached `async IIFE`. `handle.stop()` sets `st
 `nats.consumers` is compiled at build time. `generateConsumerPlugin()` in `src/consumerTemplate.ts` is a pure string function (unit-tested on its output) that emits a Nitro plugin statically importing each `handler` path and calling `defineNatsConsumer()` with the entry. It throws on a missing `stream`/`durable`/`handler`, a duplicate stream + durable, or a `'`, `\` or newline in an interpolated value. `module.ts` injects `resolveHandler` and the consumer util path. The array is intentionally not mirrored into `runtimeConfig`.
 
 Relative `handler` paths resolve against `nuxt.options.serverDir`, never `<srcDir>/server`: in Nuxt 4 `srcDir` is `app/` whenever that directory exists. A handler import that does not resolve only warns at build time ("treating it as an external dependency"), then crashes every process with `ERR_MODULE_NOT_FOUND` at startup.
+
+### Credential providers
+
+`nats.credentials.provider` other than `static` puts a `CredentialManager` (`src/runtime/server/credentials/manager.ts`) in front of the connection. `nats.ts` awaits `manager.init()` before `connect()`, passes `manager.authenticator()` (reads the current creds on every reconnect) with `ignoreAuthErrorAbort: true` (otherwise two auth errors close the client for good), then `manager.attach(() => nc.reconnect())`. Refreshes are single-flight, scheduled at `exp − clamp(lifetime × leadRatio, minLeadSec, maxLeadSec)` ±10% jitter, and a changed fingerprint triggers a rate-limited reconnect. `handleStatus()` calls `refreshNow('auth-error')` on authorization / authentication-expired errors, not on permission violations. Provider errors are `CredentialsProviderError` (`{ provider, code, status }`) and never include response bodies; log through `describeError()` (`redact.ts`).
+
+The custom provider reaches `nats.ts` through the Nitro virtual module `#nuxt-nats/credentials-provider` (`src/providerTemplate.ts`, registered in `nitro:config`), imported statically because a generated plugin would run after the connect. It is bundled whenever `customProvider` is set. Unit tests alias that id to `test/fixtures/credentials/no-provider.ts` in `vitest.config.ts`. Infisical is called over REST, not `@infisical/sdk` (which pulls in the AWS SDK). Cloud identities live in `credentials/cloud/` (`aws.ts` resolves credentials like the AWS SDK chain and SigV4-signs `sts:GetCallerIdentity`; `gcp.ts`, `azure.ts` read metadata endpoints). `@smithy/signature-v4` is a devDependency only, as the reference signer in `test/unit/cloudIdentity.test.ts`. `npm run test:coverage` enforces a coverage floor on `src/runtime/server/credentials/**`.
+
+### Synadia Control Plane client and rotator
+
+`src/runtime/synadia/client.ts` (`createSynadiaClient`, exposed as the `useSynadiaCloud()` util) is Nitro-free and plain `fetch`. Its types in `synadia/types.ts` are curated, not generated: the full schema (`openapi/synadia-control-plane.d.ts`, from the vendored YAML via `npm run gen:synadia`) is 870 KB and is not published. `test/types/synadiaTypes.test-d.ts` asserts the curated types against it — update the YAML, regenerate, and fix what it flags. Retries: 429 always; 502/503/504 and network errors for GET/PUT/DELETE and for `issueCreds` / `issueBearerJwt` (flagged `idempotent: true`: a repeat only records an extra issuance), never for creates, updates or `rotate`. `createSynadiaClient` and `SynadiaApiError` are internal; only `useSynadiaCloud()` and the types are public.
+
+`nuxt-nats-rotate` is `src/runtime/cli/bin.ts` → `dist/runtime/cli/bin.js` (mkdist rewrites imports to `.js`, so it runs directly in Node; the shebang survives). `runRotate(argv, deps)` holds all logic and takes `env`, `out`, `err`, `verify` and `now` for tests. Stores (`stores.ts`) share `createInfisicalClient` with the Infisical provider; an Infisical write answered with an approval request is an error.
+
+When changing what `src/module.ts` re-exports, keep the explicit named `export type { ... } from './runtime/types'` list: `export type *` makes the builder emit a wildcard re-export instead of named ones. Check with a consumer that augments `NatsEvents` against the built `dist/`.
 
 ### Dead-letter handling
 
@@ -155,10 +178,11 @@ declare module 'nuxt-nats' {
 ## Key Constraints
 
 - **Never import from `nats.ts` in tests** unless `nitropack/runtime` is mocked first (see `statusHandling.test.ts`). Use `_connection.ts` or individual utils.
-- **Auth priority**: JWT + NKey > JWT only > NKey only > token > user/pass > anonymous (`buildAuthOptions()`). Only one method is applied — setting multiple is a silent misconfiguration.
+- **Auth priority**: creds > creds file > JWT + NKey > JWT only > NKey only > token > user/pass > anonymous (`buildAuthOptions()`, `resolveAuthMode()`). Creds are parsed by our `parseCreds()`, not nats.js `credsAuthenticator`, whose pattern rejects a creds file without a trailing newline. A creds file is read once per connect (JWT and seed from the same read). Only one method is applied — setting multiple is a silent misconfiguration.
 - **`@nats-io/nats-core`** is the correct import for `nkeyAuthenticator` and `jwtAuthenticator`, not `@nats-io/nkeys`.
-- **Integration tests run in a single fork** (`singleFork: true`) — Testcontainers container is shared across all integration suites via `beforeAll`/`afterAll` in each file calling `startNats()`/`stopNats()`.
+- **Integration test files run one at a time** (`fileParallelism: false`; Vitest 4 removed `singleFork`) — each file starts and stops its own Testcontainers NATS via `beforeAll`/`afterAll` calling `startNats()`/`stopNats()`. On this Mac's OrbStack, Testcontainers may need `DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`.
 - Unit test consumer mocks need a `handleRef` pattern (see `test/unit/consumer.test.ts`) to avoid the while-loop spinning after the mock iterator is exhausted.
+- **Consumer unit tests wait on conditions, not wall-clock sleeps.** Use the file's `until(() => expect(...))` (`vi.waitFor`) for what the loop observably did. A negative assertion first waits for a later checkpoint (e.g. `consume()` was called, or the handler ran) that proves the loop got past the point where the unwanted call would happen. Fixed `setTimeout` sleeps timed out under CPU starvation and made each test as slow as its sleep.
 - **Consumer unit tests must make `getJetStream()` return a client** — `consumer.test.ts` mocks `_connection.ts` with a `connection` double for this. Mocking `useJetStream()` alone leaves the loop waiting forever for the connection.
 - **JSM test doubles for the consumer must be stateful:** `info()` should start answering once `add()` succeeds, and "not found" must be a real `JetStreamApiError` carrying `JetStreamApiCodes.ConsumerNotFound`. A stub that rejects forever makes the loop re-create on every pass and fails a correct implementation.
 - **Console spy cleanup:** always use `afterEach(() => vi.restoreAllMocks())` instead of manual `spy.mockRestore()` — manual calls leak if the test throws before reaching them.

@@ -1,5 +1,7 @@
 import { defineEventHandler } from 'h3'
-import { getNatsConnection, getJetStreamManager } from '../plugins/_connection'
+import { useRuntimeConfig } from 'nitropack/runtime'
+import { getCredentialManager } from '../credentials/manager'
+import { getNatsConnection, getJetStreamManager, getAuthMode } from '../plugins/_connection'
 import { getAgentStatuses } from '../utils/defineNatsAgent'
 
 export default defineEventHandler(async () => {
@@ -13,6 +15,15 @@ export default defineEventHandler(async () => {
     connected: true,
     status: 'ok',
     server: nc.getServer(),
+    // The method only (e.g. 'creds-file'), never identifiers or secret material.
+    auth: { mode: getAuthMode() ?? 'unknown' },
+  }
+
+  // Opt-in: status of a credentials provider (no identities, no secrets).
+  const manager = getCredentialManager()
+  const nats = useRuntimeConfig().nats as { health?: { details?: boolean } } | undefined
+  if (manager && nats?.health?.details) {
+    result.auth = { ...(result.auth as object), ...manager.snapshot() }
   }
 
   // RTT check

@@ -1,7 +1,7 @@
 {
   "name": "nuxt-nats",
-  "version": "0.1.0-beta.2",
-  "description": "Nuxt module for NATS JetStream \u2014 server-side publish, typed consumers, KV, stream provisioning",
+  "version": "0.1.0-beta.3",
+  "description": "Nuxt module for NATS JetStream — server-side publish, typed consumers, KV, stream provisioning",
   "keywords": [
     "nuxt",
     "nuxt-module",
@@ -39,11 +39,14 @@
       ]
     }
   },
+  "bin": {
+    "nuxt-nats-rotate": "./dist/runtime/cli/bin.js"
+  },
   "files": [
     "dist"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": "^20.19.0 || >=22.12.0"
   },
   "workspaces": [
     "playground"
@@ -60,6 +63,9 @@
     "test": "NODE_OPTIONS=--max-old-space-size=4096 vitest run",
     "test:watch": "NODE_OPTIONS=--max-old-space-size=4096 vitest watch",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:live": "vitest run --config vitest.live.config.ts",
+    "test:coverage": "vitest run --coverage",
+    "gen:synadia": "openapi-typescript openapi/synadia-control-plane.yaml -o openapi/synadia-control-plane.d.ts",
     "test:all": "npm run test && npm run test:integration",
     "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
     "version:print": "scripts/version.sh",
@@ -75,28 +81,32 @@
     "@nats-io/obj": "^3.4.0",
     "@nats-io/services": "^3.4.0",
     "@nats-io/transport-node": "^3.4.0",
-    "@nuxt/kit": "^4.4.6",
-    "@synadia-ai/agent-service": "^0.5.2",
-    "@synadia-ai/agents": "^0.5.2",
+    "@nuxt/kit": "^4.6.0",
+    "@synadia-ai/agent-service": "^0.6.0",
+    "@synadia-ai/agents": "^0.6.0",
     "defu": "^6.1.4"
   },
   "devDependencies": {
     "@nats-io/jwt": "^0.0.11",
     "@nats-io/nkeys": "^2.0.3",
     "@nuxt/devtools": "^3.2.4",
-    "@nuxt/eslint-config": "^1.15.2",
-    "@nuxt/module-builder": "^1.0.2",
-    "@nuxt/schema": "^4.4.6",
-    "@nuxt/test-utils": "^4.0.3",
-    "@testcontainers/nats": "^12.0.1",
+    "@nuxt/eslint-config": "^1.17.0",
+    "@nuxt/module-builder": "^1.0.3",
+    "@nuxt/schema": "^4.6.0",
+    "@nuxt/test-utils": "^4.3.3",
+    "@smithy/hash-node": "^4.5.2",
+    "@smithy/protocol-http": "^5.6.2",
+    "@smithy/signature-v4": "^5.7.4",
+    "@testcontainers/nats": "^12.2.0",
     "@types/node": "latest",
-    "@vitest/coverage-v8": "^4.1.7",
+    "@vitest/coverage-v8": "^4.1.11",
     "changelogen": "^0.6.2",
-    "eslint": "^10.3.0",
-    "nuxt": "^4.4.4",
-    "testcontainers": "^12.0.1",
+    "eslint": "^10.12.0",
+    "nuxt": "^4.6.0",
+    "openapi-typescript": "^7.13.0",
+    "testcontainers": "^12.2.0",
     "typescript": "~6.0.3",
-    "vitest": "^4.1.5",
-    "vue-tsc": "^3.2.8"
+    "vitest": "^4.1.11",
+    "vue-tsc": "^3.3.12"
   }
 }

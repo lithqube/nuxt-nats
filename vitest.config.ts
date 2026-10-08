@@ -1,8 +1,25 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      // A Nitro virtual module in a real build (src/providerTemplate.ts).
+      '#nuxt-nats/credentials-provider': fileURLToPath(new URL('./test/fixtures/credentials/no-provider.ts', import.meta.url)),
+    },
+  },
   test: {
-    exclude: ['test/integration/**', 'node_modules/**'],
+    exclude: ['test/integration/**', 'test/live/**', 'node_modules/**'],
+    // `npm run test:coverage`. Credentials code handles secrets and rotation, so it has a floor.
+    coverage: {
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.d.ts'],
+      thresholds: {
+        'src/runtime/server/credentials/**': { statements: 95, branches: 85, functions: 95, lines: 95 },
+        'src/runtime/synadia/**': { statements: 95, branches: 85, functions: 95, lines: 95 },
+        'src/runtime/cli/rotate.ts': { statements: 90, branches: 80, functions: 90, lines: 90 },
+      },
+    },
     // Type-level tests: test/types/*.test-d.ts are type-checked, never executed.
     typecheck: {
       enabled: true,

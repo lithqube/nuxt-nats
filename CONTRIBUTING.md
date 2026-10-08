@@ -4,6 +4,8 @@ Thanks for your interest in improving nuxt-nats. This guide covers the local dev
 
 ## Setup
 
+Requires Node.js `^20.19.0 || >=22.12.0` (CI runs 22 and 24) and Docker for the integration tests.
+
 ```bash
 git clone https://github.com/lithqube/nuxt-nats.git
 cd nuxt-nats
@@ -47,9 +49,41 @@ npm run test:types
 
 # Lint
 npm run lint
+
+# Coverage, with floors on the credentials, Control Plane client and rotator code
+npm run test:coverage
+
+# Everything above plus both builds, as one pass/fail table
+.claude/skills/verify/run.sh          # add --quick (no builds/Docker) or --live
 ```
 
-Integration tests run in a single forked worker; the NATS container is shared across suites via `startNats()` / `stopNats()` in `test/integration/setup.ts`.
+Integration test files run one at a time (`fileParallelism: false`); each file starts and stops its own Testcontainers NATS through `startNats()` / `stopNats()` in `test/integration/setup.ts`. On OrbStack, Testcontainers may need `DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock` (the verify script sets them).
+
+Consumer unit tests wait on what the loop did (`until(() => expect(...))`), never on fixed sleeps: see CLAUDE.md → Key Constraints.
+
+### Live tests against Synadia Cloud
+
+`npm run test:live` runs `test/live/` against a real Synadia Cloud account and is skipped unless enabled:
+
+```bash
+# with a personal access token (read from SYNADIA_CLOUD_TOKEN, ~/.config/synadia/token or the
+# macOS Keychain service "synadia-cloud-pat"; never pass it on a command line)
+node scripts/synadia-creds.mjs list                     # find a NATS user id
+SYNADIA_LIVE=1 SYNADIA_NATS_USER_ID=<user id> npm run test:live
+
+# or with a downloaded creds file
+SYNADIA_LIVE=1 SYNADIA_CREDS_FILE=/path/to/user.creds npm run test:live
+```
+
+They use at most three connections, issue creds for that user (an issuance) and change nothing else. `SYNADIA_STREAMS=1` also creates and deletes a 1 MB R1 stream.
+
+### Synadia Control Plane types
+
+The Control Plane OpenAPI spec is vendored in `openapi/` (not published). After updating the YAML, regenerate the full types and fix what the drift test (`test/types/synadiaTypes.test-d.ts`) flags in the curated types:
+
+```bash
+npm run gen:synadia
+```
 
 ## Pull requests
 
@@ -57,10 +91,10 @@ Integration tests run in a single forked worker; the NATS container is shared ac
 2. Make changes — keep diffs focused; one logical change per PR.
 3. Add or update tests. Bug fixes need a regression test; new features need both unit and integration coverage where it makes sense.
 4. Update relevant docs in `docs/` (guides, ADRs) when behavior or public API changes.
-5. Run `npm run lint && npm run test:all` locally.
+5. Run `.claude/skills/verify/run.sh` (or at least `npm run lint && npm run test:all && npm run test:types`) locally.
 6. Open the PR. The template will ask which areas you touched and prompt for verification evidence.
 
-CI runs lint, unit, and integration jobs on every PR. All three must be green before merge.
+CI runs lint, unit (Node 22 and 24), typecheck and integration jobs on every PR. All must be green before merge.
 
 ## Architectural decisions
 

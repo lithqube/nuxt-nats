@@ -115,6 +115,20 @@ describe('defineNatsAgent', () => {
     expect(opts.heartbeatIntervalS).toBe(5)
     expect('maxPayload' in opts).toBe(false)
     expect('extraEndpoints' in opts).toBe(false)
+    expect('interceptors' in opts).toBe(false)
+    expect('heartbeatExtras' in opts).toBe(false)
+  })
+
+  it('forwards interceptors and heartbeatExtras to the service', async () => {
+    process.env.NUXT_NATS_WORKERS = 'true'
+    h.conn = fakeNc
+    const interceptor = { aroundRequest: vi.fn() }
+    const heartbeatExtras = () => ({ load: 0.5 })
+    defineNatsAgent({ agent: 'echo', owner: 'demo', name: 'main', interceptors: [interceptor], heartbeatExtras, onPrompt: vi.fn() })
+    await flush()
+    const opts = ctorArgs[0] as Record<string, unknown>
+    expect(opts.interceptors).toEqual([interceptor])
+    expect(opts.heartbeatExtras).toBe(heartbeatExtras)
   })
 
   it('stop() tears down the service and removes itself from the registry', async () => {

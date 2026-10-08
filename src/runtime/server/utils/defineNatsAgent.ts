@@ -1,5 +1,5 @@
 import { AgentService } from '@synadia-ai/agent-service'
-import type { AgentServiceExtraEndpoint, PromptHandler } from '@synadia-ai/agent-service'
+import type { AgentServiceExtraEndpoint, PromptHandler, RequestInterceptor } from '@synadia-ai/agent-service'
 import { getNatsConnection } from '../plugins/_connection'
 
 export interface NatsAgentOptions {
@@ -32,8 +32,22 @@ export interface NatsAgentOptions {
    * server limit).
    */
   maxPayload?: string
-  /** Extra metadata merged into the service metadata (forward-compat). */
+  /**
+   * Extra metadata merged into the service metadata (forward-compat). It cannot override the
+   * required `agent`, `owner` and `protocol_version` keys, which the SDK always writes last.
+   */
   extraMetadata?: Record<string, string>
+  /**
+   * Run around the prompt handler for every admitted request, after the sender is classified
+   * and before the ack; the first listed is the outermost. Throw a `RequestRejectedError`
+   * (from `@synadia-ai/agent-service`) before calling `next()` to refuse with a §9 code.
+   */
+  interceptors?: ReadonlyArray<RequestInterceptor>
+  /**
+   * Extra fields for every heartbeat and `status` reply, read each time one is built.
+   * A provider that throws, or returns a reserved §8.3 field, costs that beat its extras only.
+   */
+  heartbeatExtras?: () => Readonly<Record<string, unknown>>
   /**
    * Custom endpoints registered alongside the protocol-required `prompt` /
    * `status` (e.g. a controller's `spawn` / `stop` / `list`). Subjects are
@@ -139,6 +153,8 @@ export function defineNatsAgent(opts: NatsAgentOptions): NatsAgentHandle {
           ...(opts.maxPayload !== undefined ? { maxPayload: opts.maxPayload } : {}),
           ...(opts.extraMetadata !== undefined ? { extraMetadata: opts.extraMetadata } : {}),
           ...(opts.extraEndpoints !== undefined ? { extraEndpoints: opts.extraEndpoints } : {}),
+          ...(opts.interceptors !== undefined ? { interceptors: opts.interceptors } : {}),
+          ...(opts.heartbeatExtras !== undefined ? { heartbeatExtras: opts.heartbeatExtras } : {}),
         })
         service.onPrompt(opts.onPrompt)
         await service.start()

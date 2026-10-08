@@ -6,6 +6,100 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Synadia Cloud support.** `nats.synadia: true` (or `{ region }`) sets the servers to
+  Synadia Cloud's TLS and WebSocket endpoints. A new guide covers endpoints, plan limits,
+  placement and the connection budget.
+- **`.creds` authentication.** `creds` (`NUXT_NATS_CREDS`, raw or base64) and `credsFile`
+  (`NUXT_NATS_CREDS_FILE`) take priority over every other auth method. A creds file is
+  re-read on each reconnect, so a rotated file takes effect without a restart. Bearer-token
+  users connect with `userJwt` alone.
+- **Stream `placement`** (`tags`, `cluster`) on stream definitions.
+- **Connection `name`**, defaulting to `nuxt-nats@<hostname>:<pid>`.
+- **Health reports `auth.mode`**: the method in use, never the identity or credentials.
+- **Credential providers.** `nats.credentials` fetches credentials before connecting,
+  refreshes them ahead of expiry (20% of the JWT lifetime, jittered) and reconnects when they
+  change, with no restart. Built in: `infisical` (machine identity via Kubernetes, AWS IAM,
+  GCP, Azure managed identity, OIDC or universal auth, over REST — no SDK dependency; the AWS
+  SigV4 signing is verified against the AWS SDK signer in tests) and `synadia` (issues creds from the Control
+  Plane). `custom` loads your `defineNatsCredentialsProvider()` file, bundled when
+  `customProvider` is set and selectable at runtime. Failures keep the last good credentials and
+  retry with backoff; the connection keeps retrying through auth errors.
+- **Synadia Control Plane client.** `useSynadiaCloud()` covers
+  teams, systems, accounts, NATS users, creds and bearer JWTs, nkey rotation, issuances,
+  revocations, streams, KV buckets and connections, with curated types checked against the
+  vendored OpenAPI spec. A create, update or nkey rotation is never retried after a gateway
+  error; issuing creds is (a repeat only records an extra issuance).
+- **`nuxt-nats-rotate` CLI.** Issues fresh creds for a NATS user and stores them in Infisical, a
+  file or a custom store; skips while stored creds are fresh, verifies new creds by connecting,
+  rotates and revokes nkeys, and refuses to report success when an Infisical approval policy holds
+  the write. Kubernetes CronJob and GitHub Actions recipes in the credential providers guide.
+- **`onCredentialsRefreshed` / `onCredentialsError` hooks** and opt-in `health.details`
+  (provider status, seconds to expiry; never identities or secrets).
+- **`nats.synadiaApi`** (`url`, token via `NUXT_NATS_SYNADIA_API_TOKEN`) configures
+  `useSynadiaCloud()`.
+- **Public types** for credential providers (`NatsCredentials`, `NatsCredentialsProvider`,
+  `CredentialsFetchContext`) and the Control Plane client (`SynadiaClient`, `SynadiaNatsUser`,
+  …), exported from `nuxt-nats`.
+- **`npm run test:coverage`** (with floors on the credentials, Control Plane and rotator code)
+  and **`npm run test:live`** (opt-in tests against a real Synadia Cloud account).
+
+### Changed
+
+- **Node.js `^20.19.0 || >=22.12.0`**, matching `@nuxt/kit` 4.6 (was `>=20.0.0`).
+- Stream provisioning failures caused by account or plan limits (insufficient resources,
+  stream count, storage, required `max_bytes`) now log what to check.
+- A build warns when a credential (`creds`, `token`, `pass`, `nkeySeed`, `userJwt`) is set
+  in `nuxt.config`, which writes it into the build output.
+- With `synadia` set, a build warns about provisioned streams without `maxBytes`, which
+  Synadia Cloud rejects.
+
+### Fixed
+
+- The API reference listed `max_chunk_size` as a `useObj()` bucket option. It is a
+  per-object `put()` option.
+- **Credential refresh polled every second while waiting for a rotation.** When a scheduled
+  refresh got unchanged creds inside the refresh window, the next target was already past and
+  the 1 s floor applied until expiry (thousands of store requests per instance). It now waits a
+  quarter of the remaining lifetime (1 s to `pollSec`) and warns once.
+- **Flaky consumer unit tests.** They slept a fixed 200 ms of wall-clock time and assumed the
+  consumer loop had progressed; under CPU starvation one timed out at 5 s. They now wait for
+  what the loop observably did, and the file runs in ~0.3 s instead of 3.4 s.
+
+---
+
+## [0.1.0-beta.3] — 2026-10-07
+
+### Changed
+
+- **Nuxt 4.6 support.** `@nuxt/kit` is now `^4.6.0`, and the module registers its Nitro
+  plugins with `addNitroPlugin()` (kit 4.6 deprecates `addServerPlugin()`). Tested on Nuxt
+  4.6.0, which still runs nitropack 2 and h3 1.
+- **`compatibility.nuxt` is now `>=4.0.0`.** Nuxt 3 reached end-of-life on 2026-07-31 and was
+  never tested.
+- **`@synadia-ai/agents` and `@synadia-ai/agent-service` are now `^0.6.0`.** From 0.6,
+  `extraMetadata` can no longer override `agent`, `owner` or `protocol_version`.
+
+### Added
+
+- **`defineNatsAgent()` accepts `interceptors` and `heartbeatExtras`**, passed through to
+  the Synadia 0.6 `AgentService`.
+
+### Fixed
+
+- **`parseDuration()` type error** under `noUncheckedIndexedAccess`.
+- **Integration tests ran files in parallel.** Vitest 4 removed the `singleFork` option,
+  so it was being ignored; the config now uses `fileParallelism: false`.
+- **The object store chunking test never chunked.** `max_chunk_size` was passed as a
+  bucket option, which ignores it; it is a per-object `put` option. The test now asserts
+  8 chunks.
+- `npm run test:types` passes and runs in CI; CI also runs the unit tests on Node 24.
+
+---
+
 ## [0.1.0-beta.2] — 2026-09-11
 
 ### Status

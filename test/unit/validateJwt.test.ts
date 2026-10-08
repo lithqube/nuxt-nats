@@ -122,3 +122,21 @@ describe('validateJwt — payload decoding', () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Could not decode'))
   })
 })
+
+describe('validateJwt — return value and source label', () => {
+  it('returns the exp claim', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const exp = Math.floor(Date.now() / 1000) + 3600
+    expect(validateJwt(makeJwt({ exp }))).toEqual({ exp })
+  })
+
+  it('returns {} when there is no exp', () => {
+    expect(validateJwt(makeJwt({ sub: 'alice' }))).toEqual({})
+  })
+
+  it('names the source setting in its messages', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    validateJwt(makeJwt({ exp: 1 }), 'NUXT_NATS_CREDS_FILE')
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('NUXT_NATS_CREDS_FILE EXPIRED'))
+  })
+})

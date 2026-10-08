@@ -9,20 +9,22 @@ NATS JetStream integration for Nuxt 4. Server-side publish, typed consumers, KV 
 | Guide | Description |
 |---|---|
 | [Getting Started](./guides/getting-started.md) | Install, minimal setup, first publish, health check |
-| [Authentication](./guides/auth.md) | JWT/NKey, token, user/pass, anonymous; priority order, `nsc` workflow, startup validation |
+| [Authentication](./guides/auth.md) | Creds files, JWT/NKey, token, user/pass, anonymous; priority order, `nsc` workflow, startup validation |
 | [Streams](./guides/streams.md) | Configure retention, storage, provisioning, deduplication |
 | [Consumers](./guides/consumers.md) | Durable pull consumers, declarative config, provisioning, ack patterns, dead-letter handling, scaling |
 | [KV Store](./guides/kv.md) | Key-value storage, watch, typed helpers |
 | [Object Store](./guides/object-store.md) | Blob storage, streaming upload/download |
 | [Agent Fabric](./guides/agents.md) | Host or call AI agents on the Synadia Agent Protocol over NATS |
 | [Typed Events](./guides/typed-events.md) | NatsEvents augmentation, end-to-end type safety |
+| [Credential providers](./guides/credentials-rotation.md) | Fetch and rotate credentials at runtime: Infisical, Synadia Control Plane, custom providers |
+| [Synadia Cloud](./guides/synadia-cloud.md) | Connect to Synadia Cloud: endpoints, `.creds`, plan limits, placement, connection budget |
 | [Deployment](./guides/deployment.md) | Node, Docker, Kubernetes, Vercel, Cloudflare Workers, Bun |
 
 ### Reference
 
 | Document | Description |
 |---|---|
-| [API Reference](./api.md) | All auto-imported server utils, types, options |
+| [API Reference](./api.md) | Module options, auto-imported server utils, types, health endpoint, `nuxt-nats-rotate` |
 | [Architecture](./architecture.md) | System design, layers, lifecycle, connection model |
 
 ### Architecture Decision Records
@@ -37,6 +39,8 @@ NATS JetStream integration for Nuxt 4. Server-side publish, typed consumers, KV 
 | [ADR-006](./adr/006-nitro-externals.md) | Mark `@nats-io/*` packages as Nitro externals |
 | [ADR-007](./adr/007-typed-events.md) | `NatsEvents` interface augmentation for typed subjects |
 | [ADR-008](./adr/008-stream-provisioning.md) | Stream provisioning defaults to `'never'`, opt-in per stream |
+| [ADR-009](./adr/009-credential-providers.md) | Credential providers own rotation; no cloud SDKs |
+| [ADR-010](./adr/010-control-plane-client.md) | Curated Control Plane client and an external rotator CLI |
 
 ## Quick reference
 
@@ -65,5 +69,6 @@ await kv.put('theme', 'dark')
 
 // server/api/upload.post.ts
 const obs = await useObj('uploads')
-await obs.put({ name: 'file.pdf' }, await readRawBody(event))
+const body = await readRawBody(event, false)
+await obs.putBlob({ name: 'file.pdf' }, body ? new Uint8Array(body) : null)
 ```

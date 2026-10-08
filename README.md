@@ -9,7 +9,7 @@ NATS JetStream integration for Nuxt. Server-side publish, typed consumers, KV an
 
 > **Status: Beta** — production-validated since June 2026. Running in multi-replica Docker Swarm deployments with JWT+NKey auth, JetStream publish, ephemeral consumers, and 5+ KV buckets under real traffic. API is stable; breaking changes unlikely before 1.0.
 
-- [✨ &nbsp;Release Notes](/CHANGELOG.md)
+- [✨ &nbsp;Release Notes](CHANGELOG.md)
 
 ## Features
 
@@ -17,20 +17,24 @@ NATS JetStream integration for Nuxt. Server-side publish, typed consumers, KV an
 - **Pull consumers** via `defineNatsConsumer()` or declared in `nuxt.config`, with opt-in durable provisioning, ackWait heartbeats, configurable backoff, and dead-letter routing
 - **Dead-letter handling** via `defineDeadLetterConsumer()` — NATS has no dead-letter queue, so this consumes max-deliver and terminated advisories from a stream and recovers the original message
 - **Ephemeral consumers** via `useEphemeralConsumer()` — request-scoped consumers with timeout, disconnect cleanup, and per-message error isolation (ideal for SSE endpoints)
-- **Connection lifecycle hooks** via `useNatsHooks()` — attach `onConnectError`, `onReconnect` (once per outage), and `onDisconnect` callbacks for alerting and metrics
+- **Connection lifecycle hooks** via `useNatsHooks()` — attach `onConnectError`, `onReconnect` (once per outage), `onDisconnect`, `onCredentialsRefreshed` and `onCredentialsError` callbacks for alerting and metrics
+- **Synadia Cloud** — `nats: { synadia: true }` connects to Synadia Cloud's TLS / WebSocket endpoints with a `.creds` file (`NUXT_NATS_CREDS` / `NUXT_NATS_CREDS_FILE`, re-read on every reconnect)
+- **Rotating credentials** via `nats.credentials` — fetch NATS creds from Infisical (Kubernetes, AWS, GCP, Azure, OIDC or client-secret identity), the Synadia Control Plane, or your own `defineNatsCredentialsProvider()`; refreshed ahead of expiry and applied without a restart
+- **Synadia Control Plane client** via `useSynadiaCloud()` — users, creds, nkey rotation, revocations, streams and KV buckets, typed
+- **`nuxt-nats-rotate` CLI** — issues fresh creds on a schedule and writes them to Infisical, a file or your own store
 - **KV buckets** via `useKV(bucket)` — cached per process
 - **Object Store** via `useObj(bucket)` — stream large blobs through Nitro handlers
 - **Agent Fabric** via `defineNatsAgent()` / `useAgents()` — expose the server as a discoverable AI agent on the NATS bus or call other agents, on the [Synadia Agent Protocol](docs/guides/agents.md) (streaming, mid-stream human-in-the-loop, heartbeats)
 - **Stream auto-provisioning** on startup (opt-in per stream, with `'update'` mode for config reconciliation)
-- **Health endpoint** at `/api/_nats/health` — connection status, RTT, JetStream account stats, registered agents
+- **Health endpoint** at `/api/_nats/health` — connection status, auth method, RTT, JetStream account stats, registered agents, and (opt-in) credential-provider status
 - **Typed subjects** — augment `NatsEvents` to get end-to-end type safety on `jsPublish`
 - **Graceful shutdown** — stops agents and consumers, then drains the connection on `SIGTERM`/`SIGINT` (works around [nitrojs/nitro#4015](https://github.com/nitrojs/nitro/issues/4015))
 - **Bun-ready** — auto-detects Bun runtime and uses WebSocket transport
 
 ## Requirements
 
-- Nuxt `>= 3.0.0`
-- Node.js `>= 20` (or Bun)
+- Nuxt `>= 4.0.0` (tested on 4.6)
+- Node.js `^20.19.0 || >= 22.12.0` (or Bun)
 - NATS Server `>= 2.10` with JetStream enabled
 
 ## Setup
@@ -106,11 +110,11 @@ export default defineEventHandler(async (event) => {
 ### Object Store
 
 ```ts
-// Upload
+// Upload — putBlob() takes bytes; put() takes a ReadableStream<Uint8Array>
 export default defineEventHandler(async (event) => {
-  const data = await readRawBody(event)
+  const data = await readRawBody(event, false) // Buffer, not a string
   const obs = await useObj('uploads')
-  await obs.put({ name: 'report.pdf' }, data)
+  await obs.putBlob({ name: 'report.pdf' }, data ? new Uint8Array(data) : null)
   return { ok: true }
 })
 
@@ -369,6 +373,75 @@ export default defineEventHandler(async (event) => {
 
 See the [Agent Fabric guide](docs/guides/agents.md) for mid-stream human-in-the-loop, controller endpoints, and lifecycle details.
 
+### Synadia Cloud
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['nuxt-nats'],
+  nats: { synadia: true }, // or { region: 'eu' } — fills in the TLS and WebSocket endpoints
+})
+```
+
+```bash
+NUXT_NATS_CREDS_FILE=/run/secrets/nats.creds   # or NUXT_NATS_CREDS="$(base64 < app.creds)"
+```
+
+Every stream you provision needs `maxBytes` on Synadia Cloud, and each instance holds one connection against your plan's limit. See the [Synadia Cloud guide](docs/guides/synadia-cloud.md).
+
+### Rotating credentials
+
+Short-lived creds can be fetched and refreshed at runtime instead of baked into env:
+
+```ts
+// nuxt.config.ts — Infisical with the pod's Kubernetes identity: no stored secret in the app
+nats: {
+  synadia: true,
+  credentials: {
+    provider: 'infisical',
+    infisical: {
+      projectId: '<project id>',
+      environment: 'prod',
+      secretName: 'NATS_CREDS',
+      auth: { method: 'kubernetes', identityId: '<machine identity id>' },
+    },
+  },
+}
+```
+
+The module fetches before connecting, refreshes 20% of the JWT lifetime early and reconnects when the creds change. `provider: 'synadia'` issues creds from the Control Plane instead, and `provider: 'custom'` loads your own:
+
+```ts
+// server/nats/credentials.ts (nats.credentials.customProvider: 'nats/credentials.ts')
+export default defineNatsCredentialsProvider({
+  name: 'vault',
+  async fetch({ signal }) {
+    return { creds: await readCredsFromVault(signal) } // or { userJwt, nkeySeed }
+  },
+})
+```
+
+Keep the store fresh with the bundled rotator, run on a schedule with a token scoped to one NATS user:
+
+```bash
+npx -p nuxt-nats nuxt-nats-rotate --user-id <nats user id> --min-remaining 12h --verify
+```
+
+See [Credential providers and rotation](docs/guides/credentials-rotation.md) for every auth method, the rotator options, and Kubernetes CronJob / GitHub Actions recipes.
+
+### Synadia Control Plane
+
+```ts
+// server/api/admin/revoke.post.ts — token via NUXT_NATS_SYNADIA_API_TOKEN (scope it to what the app needs)
+export default defineEventHandler(async (event) => {
+  const { userId } = await readBody(event)
+  const cloud = useSynadiaCloud()
+  const user = await cloud.natsUsers.get(userId)
+  await cloud.natsUsers.revoke(user.account.id, user.user_public_key)
+  return { revoked: user.user_public_key }
+})
+```
+
 ### Typed subjects
 
 Augment the `NatsEvents` interface to get full type safety across all `jsPublish` calls. Put the declaration in a `.d.ts` file under `server/` (or `shared/` if app code needs the types too), starting with the `import type` line:
@@ -401,6 +474,9 @@ Undeclared subjects and `string`-typed subjects still compile, so you can adopt 
 ```ts
 export default defineNuxtConfig({
   nats: {
+    // Synadia Cloud: fills in servers/wsServers for the region. true = geo-routed global
+    synadia: false,
+
     // TCP servers. Default: ['nats://localhost:4222']
     servers: ['nats://localhost:4222'],
 
@@ -410,8 +486,14 @@ export default defineNuxtConfig({
     // 'auto' | 'tcp' | 'ws' — default 'auto': WebSocket when running on Bun, TCP otherwise
     transport: 'auto',
 
-    // Auth — prefer env vars in production. The first match wins:
-    // userJwt + nkeySeed > userJwt > nkeySeed > token > user/pass > anonymous
+    // Connection name in server reports. Default: 'nuxt-nats@<hostname>:<pid>'
+    name: '',
+
+    // Auth — set credentials with env vars (values here are written into the build output).
+    // The first match wins:
+    // creds > credsFile > userJwt + nkeySeed > userJwt > nkeySeed > token > user/pass > anonymous
+    creds: '',
+    credsFile: '',
     userJwt: '',
     nkeySeed: '',
     token: '',
@@ -441,6 +523,7 @@ export default defineNuxtConfig({
         maxAge: '7d',             // Go-style durations: '30s', '5m', '2h', '7d'
         maxBytes: 1_073_741_824,  // 1 GB
         duplicateWindow: '5m',
+        placement: { tags: ['geo:europe'] }, // optional; tags or cluster
         provision: 'startup',     // 'startup' | 'update' | 'never' (default: 'never')
       },
     ],
@@ -448,9 +531,17 @@ export default defineNuxtConfig({
     // Consumers compiled into a generated Nitro plugin (see Declarative consumers above)
     consumers: [],
 
+    // Fetch and rotate credentials at runtime instead of the static settings above:
+    // 'static' (default) | 'infisical' | 'synadia' | 'custom'. See docs/guides/credentials-rotation.md
+    credentials: { provider: 'static' },
+
+    // Synadia Control Plane API for useSynadiaCloud(); token via NUXT_NATS_SYNADIA_API_TOKEN
+    synadiaApi: { url: 'https://cloud.synadia.com/api' },
+
     health: {
       enabled: true,
       endpoint: '/api/_nats/health',
+      details: false, // true adds credential-provider status (public endpoint: off by default)
     },
   },
 })
@@ -463,23 +554,36 @@ All `runtimeConfig.nats.*` values can be overridden at runtime. Prefix with `NUX
 | Variable | Description |
 |---|---|
 | `NUXT_NATS_SERVERS` | Comma-separated TCP server URLs |
+| `NUXT_NATS_WS_SERVERS` | Comma-separated WebSocket server URLs |
+| `NUXT_NATS_TRANSPORT` | `auto`, `tcp` or `ws` |
+| `NUXT_NATS_CREDS` | `.creds` file contents, raw or base64 (Synadia Cloud, `nsc`) |
+| `NUXT_NATS_CREDS_FILE` | Path to a `.creds` file, re-read on every reconnect |
+| `NUXT_NATS_NAME` | Connection name |
+| `NUXT_NATS_CREDENTIALS_PROVIDER` | `static`, `infisical`, `synadia` or `custom` ([guide](docs/guides/credentials-rotation.md)) |
+| `NUXT_NATS_HEALTH_DETAILS` | `true` adds credentials status to the health endpoint |
+| `NUXT_NATS_SYNADIA_API_TOKEN` | Control Plane token for `useSynadiaCloud()` |
+| `NUXT_NATS_SYNADIA_API_URL` | Control Plane API URL (default `https://cloud.synadia.com/api`) |
+| `NUXT_NATS_CREDENTIALS_*` | Any `nats.credentials` leaf, e.g. `..._SYNADIA_USER_ID`, `..._SYNADIA_TOKEN`, `..._INFISICAL_PROJECT_ID`, `..._INFISICAL_AUTH_CLIENT_SECRET`, `..._INFISICAL_AUTH_JWT` |
 | `NUXT_NATS_TOKEN` | Auth token |
 | `NUXT_NATS_USER` | Username |
 | `NUXT_NATS_PASS` | Password |
 | `NUXT_NATS_NKEY_SEED` | NKey seed (Ed25519 private key) |
 | `NUXT_NATS_USER_JWT` | User JWT (signed when `NUXT_NATS_NKEY_SEED` is also set, unsigned otherwise) |
-| `NUXT_NATS_WORKERS` | Set to `true` to start registered consumers |
+| `NUXT_NATS_WORKERS` | Set to `true` to start registered consumers and agents |
 
 ### Authentication
 
 The module selects an auth method based on which credentials are set, in this order:
 
-1. **JWT + NKey (production)** — when both `userJwt` and `nkeySeed` are set, the module uses `jwtAuthenticator(jwt, seed)` from `@nats-io/nats-core`. This is the standard for NATS servers configured with the JWT resolver (`nsc` operator/account/user hierarchy). The JWT is sent during `CONNECT`; the NKey seed is used to sign the server's nonce to prove possession of the private key.
-2. **JWT (unsigned)** — when `userJwt` is set without `nkeySeed`, uses `jwtAuthenticator(jwt)`. The JWT is sent unsigned — usable only against servers explicitly configured to accept unsigned JWTs, such as when identity is pinned out-of-band by operator policy or in test environments.
-3. **NKey only (dev)** — when only `nkeySeed` is set, uses `nkeyAuthenticator(seed)`. For static NKey-based servers without a JWT resolver.
-4. **Token** — when only `token` is set.
-5. **User / pass** — when only `user` (and optionally `pass`) is set.
-6. **Anonymous** — when none of the above are set.
+1. **Creds** — `creds` (`NUXT_NATS_CREDS`, file contents raw or base64), then `credsFile` (`NUXT_NATS_CREDS_FILE`, a path). The standard format for Synadia Cloud and `nsc generate creds`. A creds file is re-read on every reconnect, so rotating it needs no restart. See the [Synadia Cloud guide](docs/guides/synadia-cloud.md).
+2. **JWT + NKey (production)** — when both `userJwt` and `nkeySeed` are set, the module uses `jwtAuthenticator(jwt, seed)` from `@nats-io/nats-core`. This is the standard for NATS servers configured with the JWT resolver (`nsc` operator/account/user hierarchy). The JWT is sent during `CONNECT`; the NKey seed is used to sign the server's nonce to prove possession of the private key.
+3. **JWT (unsigned or bearer)** — when `userJwt` is set without `nkeySeed`, uses `jwtAuthenticator(jwt)`. The JWT is sent unsigned — usable only against servers explicitly configured to accept unsigned JWTs, such as when identity is pinned out-of-band by operator policy or in test environments.
+4. **NKey only (dev)** — when only `nkeySeed` is set, uses `nkeyAuthenticator(seed)`. For static NKey-based servers without a JWT resolver.
+5. **Token** — when only `token` is set.
+6. **User / pass** — when only `user` (and optionally `pass`) is set.
+7. **Anonymous** — when none of the above are set.
+
+With `nats.credentials.provider` set to `infisical`, `synadia` or `custom`, a credentials provider supplies the JWT and seed instead, and this list does not apply. See [Credential providers](docs/guides/credentials-rotation.md).
 
 #### JWT Auth (production)
 
@@ -490,7 +594,7 @@ NUXT_NATS_USER_JWT='eyJ0eXAiOiJqd3Q...'  # full user JWT
 NUXT_NATS_NKEY_SEED='SUACSP3ZI...'       # matching user NKey seed (omit for unsigned JWT)
 ```
 
-On startup the module checks the JWT's `exp` claim and logs a warning if it expires within 24 hours, or an error if it is already expired. Connection-status errors that mention `Authorization` or `Permissions Violation` are logged with an `AUTH ERROR` prefix so they are distinguishable from network errors; see [Auth errors](docs/guides/auth.md#auth-errors) for the exact format. See the [NATS JWT guide](https://docs.nats.io/running-a-nats-service/nats_admin/security/jwt) for chain-of-trust details.
+On startup the module checks the JWT's `exp` claim and logs a warning if it expires within 24 hours, or an error if it is already expired. Connection-status errors that mention `Authorization`, `Permissions Violation` or `Authentication Expired` are logged with an `AUTH ERROR` prefix so they are distinguishable from network errors; see [Auth errors](docs/guides/auth.md#auth-errors) for the exact format. See the [NATS JWT guide](https://docs.nats.io/running-a-nats-service/nats_admin/security/jwt) for chain-of-trust details.
 
 ## Health endpoint
 
@@ -503,6 +607,7 @@ GET /api/_nats/health
   "connected": true,
   "status": "ok",
   "server": "nats://localhost:4222",
+  "auth": { "mode": "creds-file" },
   "rttMs": 1,
   "jetstream": {
     "available": true,
@@ -514,7 +619,7 @@ GET /api/_nats/health
 }
 ```
 
-When agents are registered in the process, the response also carries an `agents` array, and a process with no connection returns `{ "connected": false, "status": "disconnected" }`. See the [API reference](docs/api.md#health-endpoint).
+`auth.mode` is the method in use (`creds`, `creds-file`, `jwt-nkey`, `jwt`, `nkey`, `token`, `user-pass`, `anonymous` or `provider:<name>`), never an identity or secret. With `health: { details: true }` and a credentials provider active, `auth` also carries the provider status and seconds to expiry. When agents are registered in the process, the response also carries an `agents` array, and a process with no connection returns `{ "connected": false, "status": "disconnected" }`. See the [API reference](docs/api.md#health-endpoint).
 
 ## Architecture notes
 
