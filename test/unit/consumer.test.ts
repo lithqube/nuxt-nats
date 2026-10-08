@@ -121,8 +121,15 @@ function setupJsmMock(existing: unknown = { config: {} }) {
   return { info, add }
 }
 
-function wait(ms = 200) {
-  return new Promise(r => setTimeout(r, ms))
+/**
+ * Wait until `assertion` passes. The consumer loop runs on its own async chain, so tests wait
+ * for what the loop observably did rather than for a fixed slice of real time: a fixed sleep
+ * fails under CPU starvation (a 200 ms wait once stretched past the 5 s test timeout) and makes
+ * every test as slow as its sleep. Negative assertions first wait for a later checkpoint that
+ * proves the loop got past the point where the unwanted call would have happened.
+ */
+function until(assertion: () => void) {
+  return vi.waitFor(assertion, { timeout: 4_000, interval: 5 })
 }
 
 describe('defineNatsConsumer', () => {
@@ -152,9 +159,8 @@ describe('defineNatsConsumer', () => {
 
     const handle = defineNatsConsumer({ stream: 'ORDERS', durable: 'billing', handler })
     handleRef.current = handle
-    await wait()
+    await until(() => expect(handler).toHaveBeenCalledOnce())
 
-    expect(handler).toHaveBeenCalledOnce()
     expect(handler.mock.calls[0]![1]).toEqual({ id: '123', total: 99 })
   })
 
@@ -174,13 +180,12 @@ describe('defineNatsConsumer', () => {
         handler,
       })
       handleRef.current = handle
-      await wait()
+      await until(() => expect(term).toHaveBeenCalledOnce())
 
       expect(jsPublish).toHaveBeenCalledWith('orders.dlq', expect.objectContaining({
         originalSubject: 'orders.created',
         deliveryCount: 5,
       }))
-      expect(term).toHaveBeenCalledOnce()
       expect(handler).not.toHaveBeenCalled()
     })
 
@@ -200,11 +205,11 @@ describe('defineNatsConsumer', () => {
         handler,
       })
       handleRef.current = handle
-      await wait()
+      // The handler runs after the DLQ check, so once it has run the check has passed.
+      await until(() => expect(handler).toHaveBeenCalledOnce())
 
       expect(jsPublish).not.toHaveBeenCalled()
       expect(term).not.toHaveBeenCalled()
-      expect(handler).toHaveBeenCalledOnce()
     })
 
     it('still calls msg.term() even when jsPublish throws', async () => {
@@ -223,9 +228,7 @@ describe('defineNatsConsumer', () => {
         handler,
       })
       handleRef.current = handle
-      await wait()
-
-      expect(term).toHaveBeenCalledOnce()
+      await until(() => expect(term).toHaveBeenCalledOnce())
     })
   })
 
@@ -242,9 +245,7 @@ describe('defineNatsConsumer', () => {
         handler: async () => { throw new Error('fail') },
       })
       handleRef.current = handle
-      await wait()
-
-      expect(nak).toHaveBeenCalledWith()
+      await until(() => expect(nak).toHaveBeenCalledWith())
     })
 
     it('applies backoff[0] on first failure (deliveryCount=1)', async () => {
@@ -260,9 +261,7 @@ describe('defineNatsConsumer', () => {
         handler: async () => { throw new Error('fail') },
       })
       handleRef.current = handle
-      await wait()
-
-      expect(nak).toHaveBeenCalledWith(1000)
+      await until(() => expect(nak).toHaveBeenCalledWith(1000))
     })
 
     it('applies backoff[1] on second failure (deliveryCount=2)', async () => {
@@ -278,9 +277,7 @@ describe('defineNatsConsumer', () => {
         handler: async () => { throw new Error('fail') },
       })
       handleRef.current = handle
-      await wait()
-
-      expect(nak).toHaveBeenCalledWith(5000)
+      await until(() => expect(nak).toHaveBeenCalledWith(5000))
     })
 
     it('clamps to last backoff entry when deliveryCount exceeds backoff length', async () => {
@@ -297,9 +294,7 @@ describe('defineNatsConsumer', () => {
         handler: async () => { throw new Error('fail') },
       })
       handleRef.current = handle
-      await wait()
-
-      expect(nak).toHaveBeenCalledWith(15_000)
+      await until(() => expect(nak).toHaveBeenCalledWith(15_000))
     })
   })
 
@@ -312,9 +307,8 @@ describe('defineNatsConsumer', () => {
 
       const handle = defineNatsConsumer({ stream: 'ORDERS', durable: 'billing', handler })
       handleRef.current = handle
-      await wait()
+      await until(() => expect(handler).toHaveBeenCalledOnce())
 
-      expect(handler).toHaveBeenCalledOnce()
       expect(handler.mock.calls[0]![1]).toBe('not-valid-json{{{')
     })
   })
@@ -355,19 +349,15 @@ describe('defineNatsConsumer', () => {
         },
       })
 
-      // Wait for handler to start
-      for (let i = 0; i < 20 && !handlerBodyStarted; i++) {
-        await wait(20)
-      }
-      expect(handlerBodyStarted).toBe(true)
-
-      // Wait past one heartbeat interval (100ms)
-      await wait(150)
-      expect(working).toHaveBeenCalled()
+      await until(() => expect(handlerBodyStarted).toBe(true))
+      // The heartbeat interval is 100 ms; the handler is still blocked, so only the heartbeat
+      // can call working().
+      await until(() => expect(working).toHaveBeenCalled())
+      expect(ack).not.toHaveBeenCalled()
 
       resolveHandler()
       handle.stop()
-      await wait(50)
+      await until(() => expect(ack).toHaveBeenCalledOnce())
     })
   })
 
@@ -390,9 +380,7 @@ describe('defineNatsConsumer', () => {
         handler: vi.fn(),
       })
 
-      // Wait for the first async iteration to run and hit the catch block
-      await wait(100)
-      expect(error).toHaveBeenCalledWith(expect.stringContaining('loop error'), consumeErr)
+      await until(() => expect(error).toHaveBeenCalledWith(expect.stringContaining('loop error'), consumeErr))
 
       handle.stop()
     })
@@ -420,10 +408,9 @@ describe('defineNatsConsumer', () => {
         handler: vi.fn(),
       })
       handleRef.current = handle
-      await wait()
+      await until(() => expect(add).toHaveBeenCalledOnce())
       handle.stop()
 
-      expect(add).toHaveBeenCalledOnce()
       const [streamArg, cfg] = add.mock.calls[0]! as [string, Record<string, unknown>]
       expect(streamArg).toBe('ORDERS')
       expect(cfg).toMatchObject({
@@ -448,7 +435,7 @@ describe('defineNatsConsumer', () => {
         handler: vi.fn(),
       })
       handleRef.current = handle
-      await wait()
+      await until(() => expect(add).toHaveBeenCalledOnce())
       handle.stop()
 
       const [, cfg] = add.mock.calls[0]! as [string, Record<string, unknown>]
@@ -468,12 +455,12 @@ describe('defineNatsConsumer', () => {
         handler: vi.fn(),
       })
       handleRef.current = handle
-      await wait()
+      // The missing-durable message is logged where add() would otherwise have been called.
+      await until(() => expect(errSpy.mock.calls.flat().join(' ')).toContain('does not exist on stream'))
       handle.stop()
 
       expect(add).not.toHaveBeenCalled()
       const msg = errSpy.mock.calls.flat().join(' ')
-      expect(msg).toContain('does not exist on stream')
       expect(msg).toContain('provision: \'startup\'')
     })
 
@@ -539,12 +526,11 @@ describe('defineNatsConsumer', () => {
         handler: vi.fn(),
       })
       handleRef.current = handle
-      await wait()
+      await until(() => expect(errSpy.mock.calls.flat().join(' ')).toContain('loop error'))
       handle.stop()
 
       expect(add).not.toHaveBeenCalled()
       const msg = errSpy.mock.calls.flat().join(' ')
-      expect(msg).toContain('loop error')
       expect(msg).not.toContain('does not exist on stream')
     })
 
@@ -561,18 +547,16 @@ describe('defineNatsConsumer', () => {
         handler: vi.fn(),
       })
       handleRef.current = handle
-      await wait()
+      await until(() => expect(errSpy.mock.calls.flat().join(' ')).toContain('filter mismatch'))
       handle.stop()
 
-      const msg = errSpy.mock.calls.flat().join(' ')
-      expect(msg).toContain('filter mismatch')
-      expect(msg).toContain('orders.shipped')
+      expect(errSpy.mock.calls.flat().join(' ')).toContain('orders.shipped')
     })
 
     it('stays quiet when the declared filter matches the live durable', async () => {
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       const handleRef: { current?: { stop: () => void } } = {}
-      setupJsMock([], handleRef)
+      const { consumer } = setupJsMock([], handleRef)
       setupJsmMock({ config: { filter_subjects: ['orders.updated', 'orders.created'] } })
 
       const handle = defineNatsConsumer({
@@ -583,11 +567,12 @@ describe('defineNatsConsumer', () => {
         handler: vi.fn(),
       })
       handleRef.current = handle
-      await wait()
+      // The filter is compared in ensureConsumer(), before consume(): once the loop has called
+      // consume(), a mismatch would already have been logged.
+      await until(() => expect(consumer.consume).toHaveBeenCalled())
       handle.stop()
 
-      const msg = errSpy.mock.calls.flat().join(' ')
-      expect(msg).not.toContain('filter mismatch')
+      expect(errSpy.mock.calls.flat().join(' ')).not.toContain('filter mismatch')
     })
   })
 
