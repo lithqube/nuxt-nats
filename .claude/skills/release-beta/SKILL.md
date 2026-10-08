@@ -65,7 +65,7 @@ It must contain `dist/` only (module, `runtime/`, `types.d.mts`, `runtime/cli/bi
 ```bash
 npm whoami                     # must succeed; otherwise the user runs `npm login`
 npm view nuxt-nats dist-tags   # note the current beta/latest
-npm publish --tag beta
+npm publish --tag beta        # publishConfig.tag is also "beta"
 ```
 
 ### 4. Move `latest` — STOP for approval

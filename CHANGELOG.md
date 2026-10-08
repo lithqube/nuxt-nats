@@ -6,10 +6,33 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 ---
 
-## [Unreleased]
+## [0.1.0-beta.4] — 2026-10-08
+
+### Status
+
+Synadia Cloud support and runtime credential rotation, on Nuxt 4.6. A Nuxt app can now connect to
+a Synadia Cloud account with a `.creds` file, fetch short-lived credentials at runtime from
+Infisical (Kubernetes, AWS, GCP, Azure or OIDC identity, so no stored secret), the Synadia Control
+Plane or your own provider, and keep them rotated with the bundled `nuxt-nats-rotate` CLI. Verified
+against a real Synadia Cloud account, besides unit and Testcontainers integration tests.
+
+### Upgrading from 0.1.0-beta.3
+
+- **Nuxt 4 only.** `compatibility.nuxt` is now `>=4.0.0` (Nuxt 3 reached end-of-life on 2026-07-31
+  and was never tested). Tested on Nuxt 4.6.
+- **Node.js `^20.19.0 || >=22.12.0`** (was `>=20.0.0`), matching `@nuxt/kit` 4.6.
+- **Health response** gains `auth: { mode }` on every connected response. Clients that
+  validate the shape strictly need to allow it.
+- **`@synadia-ai/*` 0.6:** `defineNatsAgent({ extraMetadata })` can no longer override `agent`,
+  `owner` or `protocol_version`.
+- **Credentials in `nuxt.config`** now trigger a build warning: they are serialized into the build
+  output. Move them to `NUXT_NATS_*` runtime env vars.
+- Everything else is additive; existing static auth settings behave as before.
 
 ### Added
 
+- **`defineNatsAgent()` accepts `interceptors` and `heartbeatExtras`**, passed through to
+  the Synadia 0.6 `AgentService`.
 - **Synadia Cloud support.** `nats.synadia: true` (or `{ region }`) sets the servers to
   Synadia Cloud's TLS and WebSocket endpoints. A new guide covers endpoints, plan limits,
   placement and the connection budget.
@@ -49,6 +72,13 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 ### Changed
 
+- **Nuxt 4.6 support.** `@nuxt/kit` is now `^4.6.0`, and the module registers its Nitro
+  plugins with `addNitroPlugin()` (kit 4.6 deprecates `addServerPlugin()`). Tested on Nuxt
+  4.6.0, which still runs nitropack 2 and h3 1.
+- **`compatibility.nuxt` is now `>=4.0.0`.** Nuxt 3 reached end-of-life on 2026-07-31 and was
+  never tested.
+- **`@synadia-ai/agents` and `@synadia-ai/agent-service` are now `^0.6.0`.** From 0.6,
+  `extraMetadata` can no longer override `agent`, `owner` or `protocol_version`.
 - **Node.js `^20.19.0 || >=22.12.0`**, matching `@nuxt/kit` 4.6 (was `>=20.0.0`).
 - Stream provisioning failures caused by account or plan limits (insufficient resources,
   stream count, storage, required `max_bytes`) now log what to check.
@@ -59,8 +89,18 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 ### Fixed
 
-- The API reference listed `max_chunk_size` as a `useObj()` bucket option. It is a
-  per-object `put()` option.
+- **`parseDuration()` type error** under `noUncheckedIndexedAccess`.
+- **Integration tests ran files in parallel.** Vitest 4 removed the `singleFork` option,
+  so it was being ignored; the config now uses `fileParallelism: false`.
+- **The object store chunking test never chunked.** `max_chunk_size` was passed as a
+  bucket option, which ignores it; it is a per-object `put` option. The test now asserts
+  8 chunks.
+- `npm run test:types` passes and runs in CI; CI also runs the unit tests on Node 24.
+- **Documentation.** The Object Store examples passed a Buffer to `put()`, which only accepts
+  a `ReadableStream` (use `putBlob()` for bytes); the bucket `ttl` is in nanoseconds, and
+  `max_chunk_size` is a per-object option, not a bucket option. The auth guide recommended
+  setting credentials in `nuxt.config`, which bakes them into the build output; it now uses
+  runtime env vars throughout. Requirements, health shape and auth-error strings corrected.
 - **Credential refresh polled every second while waiting for a rotation.** When a scheduled
   refresh got unchanged creds inside the refresh window, the next target was already past and
   the 1 s floor applied until expiry (thousands of store requests per instance). It now waits a
@@ -71,32 +111,9 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 ---
 
-## [0.1.0-beta.3] — 2026-10-07
+## [0.1.0-beta.3] — 2026-09-13
 
-### Changed
-
-- **Nuxt 4.6 support.** `@nuxt/kit` is now `^4.6.0`, and the module registers its Nitro
-  plugins with `addNitroPlugin()` (kit 4.6 deprecates `addServerPlugin()`). Tested on Nuxt
-  4.6.0, which still runs nitropack 2 and h3 1.
-- **`compatibility.nuxt` is now `>=4.0.0`.** Nuxt 3 reached end-of-life on 2026-07-31 and was
-  never tested.
-- **`@synadia-ai/agents` and `@synadia-ai/agent-service` are now `^0.6.0`.** From 0.6,
-  `extraMetadata` can no longer override `agent`, `owner` or `protocol_version`.
-
-### Added
-
-- **`defineNatsAgent()` accepts `interceptors` and `heartbeatExtras`**, passed through to
-  the Synadia 0.6 `AgentService`.
-
-### Fixed
-
-- **`parseDuration()` type error** under `noUncheckedIndexedAccess`.
-- **Integration tests ran files in parallel.** Vitest 4 removed the `singleFork` option,
-  so it was being ignored; the config now uses `fileParallelism: false`.
-- **The object store chunking test never chunked.** `max_chunk_size` was passed as a
-  bucket option, which ignores it; it is a per-object `put` option. The test now asserts
-  8 chunks.
-- `npm run test:types` passes and runs in CI; CI also runs the unit tests on Node 24.
+Republish of 0.1.0-beta.2 with the pnpm lockfile and workspace config tracked. No code changes.
 
 ---
 
