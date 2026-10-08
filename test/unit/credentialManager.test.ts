@@ -421,19 +421,22 @@ describe('CredentialManager — store not rotated yet', () => {
 
   it('backs off and warns once instead of fetching every second until expiry', async () => {
     vi.useFakeTimers()
+    // No jitter: the first refresh then lands exactly 120 s before expiry, so the counts below
+    // do not depend on where a random ±10% put it (CI once saw 15 fetches with jitter).
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
     const warn = vi.mocked(console.warn)
-    // The store keeps serving the same creds: lifetime 600 s, so the window opens ~120 s before exp.
+    // The store keeps serving the same creds: lifetime 600 s, so the window opens 120 s before exp.
     const p = queueProvider({ creds: creds(jwt({ iat: nowSec(), exp: nowSec() + 600 })) })
     const m = new CredentialManager(p)
     await m.init()
     m.attach(async () => {})
 
-    await vi.advanceTimersToNextTimerAsync() // first scheduled refresh, inside the window
+    await vi.advanceTimersToNextTimerAsync() // first scheduled refresh, 120 s before expiry
     const atWindow = p.fetch.mock.calls.length
-    await vi.advanceTimersByTimeAsync(110_000) // most of the remaining ~120 s
-
-    // A quarter of the remaining time each round: 120 s → 30, 22, 17, 13, 10 … not ~110 fetches.
-    expect(p.fetch.mock.calls.length - atWindow).toBeLessThan(12)
+    // 100 s of the remaining 120: a quarter of the remaining time each round (30, 22.5, 16.9,
+    // 12.7, 9.5, 7.1 s …) is ~6 fetches. Without the backoff it was one per second (~100).
+    await vi.advanceTimersByTimeAsync(100_000)
+    expect(p.fetch.mock.calls.length - atWindow).toBeLessThanOrEqual(8)
     expect(warn.mock.calls.filter(c => String(c[0]).includes('is rotation running'))).toHaveLength(1)
     await m.dispose()
   })
