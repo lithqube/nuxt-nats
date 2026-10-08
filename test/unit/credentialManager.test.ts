@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { createUser } from '@nats-io/nkeys'
 import {
+  awaitingRotationDelayMs,
   CredentialManager,
   getCredentialManager,
   normalizeCredentials,
@@ -407,5 +408,48 @@ describe('CredentialManager — failure and lifecycle edges', () => {
     expect(getCredentialManager()).toBe(m)
     setCredentialManager(undefined)
     expect(getCredentialManager()).toBeUndefined()
+  })
+})
+
+describe('CredentialManager — store not rotated yet', () => {
+  it('awaitingRotationDelayMs is a quarter of the remaining lifetime, within 1 s and pollSec', () => {
+    const now = 1_000_000_000_000
+    expect(awaitingRotationDelayMs(now / 1000 + 400, now, DEFAULTS)).toBe(100_000)
+    expect(awaitingRotationDelayMs(now / 1000 + 2, now, DEFAULTS)).toBe(1000)
+    expect(awaitingRotationDelayMs(now / 1000 + 86_400, now, DEFAULTS)).toBe(300_000)
+  })
+
+  it('backs off and warns once instead of fetching every second until expiry', async () => {
+    vi.useFakeTimers()
+    const warn = vi.mocked(console.warn)
+    // The store keeps serving the same creds: lifetime 600 s, so the window opens ~120 s before exp.
+    const p = queueProvider({ creds: creds(jwt({ iat: nowSec(), exp: nowSec() + 600 })) })
+    const m = new CredentialManager(p)
+    await m.init()
+    m.attach(async () => {})
+
+    await vi.advanceTimersToNextTimerAsync() // first scheduled refresh, inside the window
+    const atWindow = p.fetch.mock.calls.length
+    await vi.advanceTimersByTimeAsync(110_000) // most of the remaining ~120 s
+
+    // A quarter of the remaining time each round: 120 s → 30, 22, 17, 13, 10 … not ~110 fetches.
+    expect(p.fetch.mock.calls.length - atWindow).toBeLessThan(12)
+    expect(warn.mock.calls.filter(c => String(c[0]).includes('is rotation running'))).toHaveLength(1)
+    await m.dispose()
+  })
+
+  it('returns to the normal schedule once the store is rotated', async () => {
+    vi.useFakeTimers()
+    const stale = { creds: creds(jwt({ iat: nowSec(), exp: nowSec() + 600, jti: 'old' })) }
+    const fresh = { creds: creds(jwt({ iat: nowSec() + 500, exp: nowSec() + 4100, jti: 'new' })) }
+    const p = queueProvider(stale, stale, fresh)
+    const m = new CredentialManager(p)
+    await m.init()
+    m.attach(async () => {})
+    await vi.advanceTimersToNextTimerAsync() // unchanged → awaiting rotation
+    await vi.advanceTimersToNextTimerAsync() // rotated
+    // 3600 s lifetime → 720 s lead: the next refresh is far out again, not seconds away.
+    expect(m.snapshot().nextRefreshInSec).toBeGreaterThan(2000)
+    await m.dispose()
   })
 })

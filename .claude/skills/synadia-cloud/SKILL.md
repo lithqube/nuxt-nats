@@ -36,8 +36,9 @@ Endpoint-level details are in [reference.md](reference.md).
 - No new runtime dependencies for providers or cloud identity: plain `fetch`, `node:crypto`.
 - Errors carry `{ provider|operation, code, status }` and **never response bodies**; log through
   `describeError()` / `redact()`. Tests assert that tokens and creds never reach output.
-- Control Plane retries: 429 always; 502/503/504 and network errors only for GET/PUT/DELETE, so a
-  create or an issuance is never repeated.
+- Control Plane retries: 429 always; 502/503/504 and network errors for GET/PUT/DELETE and for
+  `issueCreds` / `issueBearerJwt` (a repeat only records an extra issuance); never for creates,
+  updates or `rotate`.
 - Curated types in `src/runtime/synadia/types.ts` are checked against the generated schema by
   `test/types/synadiaTypes.test-d.ts`. To update the spec: replace the YAML (keep the attribution
   header), `npm run gen:synadia`, fix what the type test flags.
@@ -51,6 +52,7 @@ Endpoint-level details are in [reference.md](reference.md).
   length and `uat_` prefix. The user stores it themselves from Terminal:
   `security add-generic-password -U -a "$USER" -s synadia-cloud-pat -w`.
 - `node scripts/synadia-creds.mjs list` shows team/system/account/user ids (no secrets).
-- Test user `CLI` = `2ZA68pwTQI7PhawVoe92JsmVNFR` (account `Default`); account `dev_ferru` has no users.
+- The test user id is not committed: find it with `node scripts/synadia-creds.mjs list` (or the
+  project memory) and pass it as `SYNADIA_NATS_USER_ID`.
 - `SYNADIA_LIVE=1 SYNADIA_NATS_USER_ID=<id> npm run test:live` — issues creds (an issuance), read-only
   otherwise; `SYNADIA_STREAMS=1` creates/deletes a stream and needs the user's consent.

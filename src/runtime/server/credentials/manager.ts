@@ -105,6 +105,15 @@ export function refreshDelayMs(cur: { iat?: number, exp?: number }, nowMs: numbe
 }
 
 /**
+ * Delay between fetches while waiting for a rotation: the store returned the same credentials
+ * inside the refresh window. A quarter of the remaining lifetime, so fetches thin out instead of
+ * running every second, bounded by 1 s and `pollSec`.
+ */
+export function awaitingRotationDelayMs(exp: number, nowMs: number, o: Required<RefreshOptions>): number {
+  return Math.min(o.pollSec * 1000, Math.max(1000, (exp * 1000 - nowMs) / 4))
+}
+
+/**
  * Owns the credentials of one connection: fetches them before connect, serves them to the
  * client on every (re)connect, refreshes them ahead of expiry and asks for a reconnect when
  * they change. On failure it keeps the last good credentials and retries with backoff.
@@ -122,6 +131,8 @@ export class CredentialManager {
   private lastReconnectAt = 0
   private lastAuthErrorRefreshAt = 0
   private failures = 0
+  // A scheduled refresh got unchanged credentials inside the refresh window.
+  private awaitingRotation = false
   private inflight?: Promise<boolean>
   private reconnect?: () => Promise<void>
   private readonly abort = new AbortController()
@@ -228,10 +239,17 @@ export class CredentialManager {
         throw new CredentialsProviderError(this.provider.name, 'expired-credentials', 'returned credentials that have already expired')
       }
       const changed = next.fingerprint !== this.current?.fingerprint
-      if (!changed && reason === 'scheduled' && next.exp) {
+      if (changed) {
+        this.awaitingRotation = false
+      }
+      else if (reason === 'scheduled' && next.exp) {
         // A scheduled refresh runs inside the lead window: unchanged credentials mean the
-        // store has not been rotated and the connection will drop at expiry.
-        console.warn(`[nuxt-nats] Credentials from "${this.provider.name}" are unchanged and expire in ${Math.round((next.exp * 1000 - Date.now()) / 1000)}s — is rotation running?`)
+        // store has not been rotated and the connection will drop at expiry. Warn once per
+        // wait; schedule() then backs off instead of fetching every second.
+        if (!this.awaitingRotation) {
+          console.warn(`[nuxt-nats] Credentials from "${this.provider.name}" are unchanged and expire in ${Math.round((next.exp * 1000 - Date.now()) / 1000)}s — is rotation running?`)
+        }
+        this.awaitingRotation = true
       }
       this.current = next
       this.status = 'ok'
@@ -270,6 +288,9 @@ export class CredentialManager {
     let delay: number
     if (this.failures > 0) {
       delay = Math.min(1000 * 2 ** (this.failures - 1), this.opts.maxBackoffSec * 1000)
+    }
+    else if (this.awaitingRotation && this.current?.exp) {
+      delay = awaitingRotationDelayMs(this.current.exp, Date.now(), this.opts)
     }
     else if (this.current) {
       delay = refreshDelayMs(this.current, Date.now(), this.opts)

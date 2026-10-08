@@ -39,8 +39,8 @@ On a failure, read that step's log before changing anything.
   sets `DOCKER_HOST` and `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` itself; without them Testcontainers
   fails with "Could not find a working container runtime strategy" even when `docker info` works.
 - **Live tests** read the personal access token from the macOS Keychain (service
-  `synadia-cloud-pat`, via `scripts/synadia-token.mjs`). Never print it. The default test user is
-  `CLI` (`2ZA68pwTQI7PhawVoe92JsmVNFR`, account Default); override with `SYNADIA_NATS_USER_ID`.
+  `synadia-cloud-pat`, via `scripts/synadia-token.mjs`). Never print it. `--live` needs
+  `SYNADIA_NATS_USER_ID` (find it with `node scripts/synadia-creds.mjs list`) or `SYNADIA_CREDS_FILE`.
   Each run issues creds for that user (an issuance); nothing else changes. Add `SYNADIA_STREAMS=1`
   only with the user's consent (it uses a stream slot of their plan).
 - **Flaky timing?** Rerun the single file 5 times

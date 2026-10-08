@@ -61,6 +61,10 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 - The API reference listed `max_chunk_size` as a `useObj()` bucket option. It is a
   per-object `put()` option.
+- **Credential refresh polled every second while waiting for a rotation.** When a scheduled
+  refresh got unchanged creds inside the refresh window, the next target was already past and
+  the 1 s floor applied until expiry (thousands of store requests per instance). It now waits a
+  quarter of the remaining lifetime (1 s to `pollSec`) and warns once.
 - **Flaky consumer unit tests.** They slept a fixed 200 ms of wall-clock time and assumed the
   consumer loop had progressed; under CPU starvation one timed out at 5 s. They now wait for
   what the loop observably did, and the file runs in ~0.3 s instead of 3.4 s.

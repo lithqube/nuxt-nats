@@ -64,7 +64,12 @@ if [[ $QUICK -eq 0 ]]; then
   fi
 fi
 if [[ $LIVE -eq 1 ]]; then
-  step "live" env SYNADIA_LIVE=1 SYNADIA_NATS_USER_ID="${SYNADIA_NATS_USER_ID:-2ZA68pwTQI7PhawVoe92JsmVNFR}" npm run test:live
+  if [[ -z "${SYNADIA_NATS_USER_ID:-}${SYNADIA_CREDS_FILE:-}" ]]; then
+    RESULTS+=("SKIP  live         set SYNADIA_NATS_USER_ID (node scripts/synadia-creds.mjs list) or SYNADIA_CREDS_FILE")
+    FAILED=1
+  else
+    step "live" env SYNADIA_LIVE=1 npm run test:live
+  fi
 fi
 
 echo
