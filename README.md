@@ -1,5 +1,7 @@
 # nuxt-nats
 
+![Nuxt NATS cloud messaging banner with JetStream, typed consumers, Synadia Cloud, and credential rotation](docs/assets/nuxt-nats-hero.png)
+
 [![npm version][npm-version-src]][npm-version-href]
 [![npm downloads][npm-downloads-src]][npm-downloads-href]
 [![License][license-src]][license-href]
