@@ -57,7 +57,8 @@ Then check the tarball:
 npm pack --dry-run 2>&1 | tail -25
 ```
 
-It must contain `dist/` only (module, `runtime/`, `types.d.mts`, `runtime/cli/bin.js`) — no
+It must contain `dist/` (module, `runtime/`, `types.d.mts`, `runtime/cli/bin.js`) and
+`CHANGELOG.md`, plus npm's `README.md`, `LICENSE` and `package.json` — no
 `openapi/`, `test/`, `playground/` or `.creds` files.
 
 ### 3. Publish — STOP for approval
@@ -65,7 +66,7 @@ It must contain `dist/` only (module, `runtime/`, `types.d.mts`, `runtime/cli/bi
 ```bash
 npm whoami                     # must succeed; otherwise the user runs `npm login`
 npm view nuxt-nats dist-tags   # note the current beta/latest
-npm publish --tag beta
+npm publish --tag beta        # publishConfig.tag is also "beta"
 ```
 
 ### 4. Move `latest` — STOP for approval

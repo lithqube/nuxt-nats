@@ -118,8 +118,11 @@ Pre-releases have shipped under the `beta` dist-tag since 0.1.0-beta.1. There is
 
    ```bash
    npm run lint && npm run test:all && npm run prepack
+   npm pack --dry-run          # dist/ and CHANGELOG.md (plus npm's README.md, LICENSE and package.json); no openapi/, test/, playground/ or .creds files
    npm publish --tag beta
    ```
+
+   `package.json` sets `publishConfig.tag` to `beta`, so a plain `npm publish` also lands on `beta`, never on `latest` by accident. Pass `--tag beta` anyway to be explicit. The `release-beta` project skill (`.claude/skills/release-beta`) walks through these steps with checks.
 
 3. Point `latest` at the new version. `latest` has tracked the newest beta since 0.1.0-beta.1, so a plain `npm install nuxt-nats` installs it, but `npm publish --tag beta` does not move it:
 

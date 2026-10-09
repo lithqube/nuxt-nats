@@ -1,7 +1,7 @@
 {
   "name": "nuxt-nats",
-  "version": "0.1.0-beta.3",
-  "description": "Nuxt module for NATS JetStream — server-side publish, typed consumers, KV, stream provisioning",
+  "version": "0.1.0-beta.4",
+  "description": "Nuxt module for NATS JetStream and Synadia Cloud — server-side publish, typed consumers, KV, stream provisioning, rotating credentials",
   "keywords": [
     "nuxt",
     "nuxt-module",
@@ -12,7 +12,11 @@
     "pubsub",
     "kv",
     "object-store",
-    "event-streaming"
+    "event-streaming",
+    "synadia",
+    "synadia-cloud",
+    "credentials-rotation",
+    "infisical"
   ],
   "repository": {
     "type": "git",
@@ -43,8 +47,13 @@
     "nuxt-nats-rotate": "./dist/runtime/cli/bin.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
+  "publishConfig": {
+    "tag": "beta",
+    "access": "public"
+  },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
