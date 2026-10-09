@@ -118,7 +118,7 @@ Pre-releases have shipped under the `beta` dist-tag since 0.1.0-beta.1. There is
 
    ```bash
    npm run lint && npm run test:all && npm run prepack
-   npm pack --dry-run          # dist/ only: no openapi/, test/, playground/ or .creds files
+   npm pack --dry-run          # dist/ and CHANGELOG.md (plus npm's README.md, LICENSE and package.json); no openapi/, test/, playground/ or .creds files
    npm publish --tag beta
    ```
 

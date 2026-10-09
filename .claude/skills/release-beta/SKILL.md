@@ -57,7 +57,8 @@ Then check the tarball:
 npm pack --dry-run 2>&1 | tail -25
 ```
 
-It must contain `dist/` only (module, `runtime/`, `types.d.mts`, `runtime/cli/bin.js`) — no
+It must contain `dist/` (module, `runtime/`, `types.d.mts`, `runtime/cli/bin.js`) and
+`CHANGELOG.md`, plus npm's `README.md`, `LICENSE` and `package.json` — no
 `openapi/`, `test/`, `playground/` or `.creds` files.
 
 ### 3. Publish — STOP for approval
