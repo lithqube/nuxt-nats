@@ -31,6 +31,7 @@ NATS JetStream integration for Nuxt. Server-side publish, typed consumers, KV an
 - **Health endpoint** at `/api/_nats/health` — connection status, auth method, RTT, JetStream account stats, registered agents, and (opt-in) credential-provider status
 - **Typed subjects** — augment `NatsEvents` to get end-to-end type safety on `jsPublish`
 - **Graceful shutdown** — stops agents and consumers, then drains the connection on `SIGTERM`/`SIGINT` (works around [nitrojs/nitro#4015](https://github.com/nitrojs/nitro/issues/4015))
+- **Claude Code skill** — a bundled, tested skill so an AI assistant uses the module's real API ([install](./docs/guides/claude-code.md))
 - **Bun-ready** — auto-detects Bun runtime and uses WebSocket transport
 
 ## Requirements
