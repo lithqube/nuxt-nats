@@ -71,6 +71,6 @@ check() { # name, then env assignments for the app
 check bun-tcp NUXT_NATS_TRANSPORT=tcp NUXT_NATS_SERVERS="nats://127.0.0.1:$TCP_PORT"
 check bun-ws NUXT_NATS_TRANSPORT=ws NUXT_NATS_WS_SERVERS="ws://127.0.0.1:$WS_PORT"
 # 'auto' must pick WebSocket on Bun: only a WebSocket server is reachable here
-check bun-auto NUXT_NATS_SERVERS=nats://127.0.0.1:1 NUXT_NATS_WS_SERVERS="ws://127.0.0.1:$WS_PORT"
+check bun-auto NUXT_NATS_TRANSPORT=auto NUXT_NATS_SERVERS=nats://127.0.0.1:1 NUXT_NATS_WS_SERVERS="ws://127.0.0.1:$WS_PORT"
 
 exit $FAILED
