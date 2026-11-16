@@ -32,7 +32,7 @@ NATS JetStream integration for Nuxt. Server-side publish, typed consumers, KV an
 - **Typed subjects** — augment `NatsEvents` to get end-to-end type safety on `jsPublish`
 - **Graceful shutdown** — stops agents and consumers, then drains the connection on `SIGTERM`/`SIGINT` (works around [nitrojs/nitro#4015](https://github.com/nitrojs/nitro/issues/4015))
 - **Claude Code skill** — a bundled, tested skill so an AI assistant uses the module's real API ([install](./docs/guides/claude-code.md))
-- **Bun-ready** — auto-detects Bun runtime and uses WebSocket transport
+- **Bun-ready** — auto-detects Bun runtime and uses WebSocket transport; smoke-tested against the latest Bun in CI (TCP, WebSocket and `auto`)
 
 ## Requirements
 

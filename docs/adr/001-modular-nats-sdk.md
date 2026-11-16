@@ -8,7 +8,7 @@
 The NATS JavaScript ecosystem has two SDK generations:
 
 - **Legacy:** `nats` npm package (v2.x). Monolithic. Last published ~1 year ago. Maintenance-only.
-- **Current:** `@nats-io/*` monorepo packages (v3.x). Modular. Actively developed. Requires Node 20+.
+- **Current:** `@nats-io/*` monorepo packages (v3.x). Modular. Actively developed. Requires Node 22+ from 3.5.
 
 The v3 SDK is a breaking rewrite. Key removals relevant to this module:
 

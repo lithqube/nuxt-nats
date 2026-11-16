@@ -87,6 +87,11 @@ for await (const item of list) {
 }
 ```
 
+> **Client 3.5 behaviour.** `list()` fails with "list incomplete" and `get()` with "object read
+> incomplete" when chunks are missing, instead of returning partial results or hanging. `get()`
+> and `watch()` fail with `PermissionViolationError` when the connection may not publish the
+> flow-control reply. `ObjectResult.error` resolves to the error rather than rejecting.
+
 ## Stream large files
 
 For large files, avoid loading the entire file into memory. Use Node.js streams:

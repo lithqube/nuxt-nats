@@ -31,8 +31,12 @@ npm run test:types
 # Lint
 npm run lint
 
-# Coverage (floors on credentials/**, synadia/**, cli/rotate.ts)
+# Coverage (floors on credentials/**, synadia/**, cli/rotate.ts; also a CI job)
 npm run test:coverage
+
+# Bun smoke test: needs `npm run dev:build` first and Docker. Runs the built playground under
+# Bun over TCP, WebSocket and transport 'auto' (also a CI job; BUN=/path/to/bun to pick a binary)
+npm run test:bun
 
 # Full gate as one pass/fail table (--quick: lint/unit/types; --live: + Synadia Cloud)
 .claude/skills/verify/run.sh
@@ -112,7 +116,7 @@ The async message loop runs in a detached `async IIFE`. `handle.stop()` sets `st
 - Any other loop error logs `loop error, retrying in 5s` and retries
 - `stopAllConsumers()` must be called before `nc.drain()` on shutdown to prevent ack/connection races
 
-`consumers.addOrUpdate` is unreleased upstream and `ConsumerApiAction.CreateOrUpdate` is unreachable in 3.4.0, so the info-then-add shape is deliberate.
+`jsm.consumers.addOrUpdate()` exists since `@nats-io/jetstream` 3.5.0 but is deliberately not used: it would update a live durable, and this loop never changes an existing one (a filter mismatch is logged and the live filter wins). Keep the info-then-add shape unless that policy changes.
 
 ### Declarative consumers
 
