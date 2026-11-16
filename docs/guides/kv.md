@@ -61,6 +61,16 @@ const entry = await kv.get('counter')
 await kv.update('counter', '42', entry!.revision)   // fails if revision changed
 ```
 
+> **Client 3.5 behaviour.** A bucket uses its own `timeout`, or inherits the JetStream client's (5 s
+> by default); there is no longer a hidden 2 s default. `keys()` and `history()` fail with an
+> "incomplete" error instead of returning a partial list when the read cannot finish, and
+> `watch()`, `keys()` and `history()` fail with `PermissionViolationError` when the connection may
+> not publish the flow-control reply, instead of stalling.
+>
+> `keys()` and `history()` are async iterators, so they can yield entries **before** the error is
+> raised. Collect the whole result before acting on it (or be ready to undo partial work); a
+> `for await` loop that applies each entry as it arrives can make partial changes.
+
 ## Watching for changes
 
 Watch all keys or a specific key/prefix for changes:

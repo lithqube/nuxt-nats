@@ -24,7 +24,7 @@ if (entry && entry.operation === 'PUT') {
 - Keys match `[-/_=.a-zA-Z0-9]+`. A `:` is not allowed, so use `.` or `/`.
 - **TTL units differ across the ecosystem.** In `@nats-io/kv` (what the module uses) a bucket `ttl` is milliseconds; `nats-py` takes float seconds; the `nats` CLI takes a duration string (`--ttl 72h`). Mixing them makes keys never expire or expire at once.
 - Per-key TTL and delete markers need a recent server and stream settings. Without markers an expiring key disappears with **no watcher event**, which silently breaks cache-invalidation designs that watch the bucket.
-- Client 3.5: a bucket uses its own `timeout`, or inherits the JetStream client's (5 s default); `keys()` and `history()` fail with an "incomplete" error instead of returning a partial list; `watch()`, `keys()` and `history()` fail with `PermissionViolationError` when the connection may not publish the flow-control reply.
+- Client 3.5: a bucket uses its own `timeout`, or inherits the JetStream client's (5 s default); `keys()` and `history()` fail with an "incomplete" error instead of returning a partial list (they are async iterators and can yield entries before the error, so collect the whole result before acting on it); `watch()`, `keys()` and `history()` fail with `PermissionViolationError` when the connection may not publish the flow-control reply.
 
 ## `useObj(bucket, opts?)`
 
@@ -44,7 +44,7 @@ const res = await obs.get('invoice.pdf')    // null when missing; res.data is a 
 
 - Wrapping a `Buffer` in a `ReadableStream` is the most common mistake; `get()` returns a stream too, so pipe it through the Nitro response.
 - `max_chunk_size` is a per-object `put()` option, not a bucket option.
-- Client 3.5: `list()` fails with "list incomplete" and `get()` with "object read incomplete" when chunks are missing, instead of returning partial results or hanging; `ObjectResult.error` resolves to the error rather than rejecting.
+- Client 3.5: `list()` reads metadata, not chunks, so a successful `list()` is not an integrity check (it fails with "list incomplete" only when the listing cannot finish). `get()` returns before the data is read: a missing chunk ("object read incomplete"), digest mismatch or flow-control permission error surfaces on the `res.data` stream, and `res.error` (a promise) resolves to the error instead of rejecting. Handle errors where you consume the stream.
 - Updates replace the whole object; there is no partial update.
 
 ## When not to reach for these

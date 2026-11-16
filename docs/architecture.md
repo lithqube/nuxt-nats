@@ -151,7 +151,7 @@ Shutdown (SIGTERM / SIGINT, or Nitro 'close'; the first one runs, later calls re
 | Cloudflare Workers | Not detected: `'auto'` picks TCP, which is unavailable | `transport: 'ws'` with `wsServers` |
 | Deno Deploy | Not detected: `'auto'` picks TCP, which is unavailable | `transport: 'ws'` with `wsServers` |
 
-`transport: 'auto'` selects WebSocket only when Bun is detected, and TCP everywhere else. Set `transport: 'ws'` explicitly for edge runtimes.
+`transport: 'auto'` selects WebSocket only when Bun is detected, and TCP everywhere else. Set `transport: 'ws'` explicitly for edge runtimes. Bun is exercised in CI by `scripts/bun-smoke.sh`.
 
 ## Consumer isolation
 
@@ -203,3 +203,20 @@ const natsPackages = [
 ```
 
 This means they are resolved from `node_modules` at runtime rather than inlined into the Nitro bundle.
+
+## Client features the module does not expose yet
+
+`@nats-io/jetstream` 3.5 supports several newer server features that nuxt-nats does not wire up.
+They work today by using the underlying client directly (`useJetStream()`, `useNats()`), but
+`jsPublish()`, `StreamDefinition` and `ConsumerDefinition` have no options for them:
+
+| Feature | ADR | Client surface |
+|---|---|---|
+| Per-message TTL | ADR-43 | `ttl` publish option, `allow_msg_ttl` on the stream |
+| Message scheduler | ADR-51 | `schedule` / `cancelSchedule` publish options, `allow_msg_schedules` |
+| Batch publishing | ADR-50 | `js.startBatch()`, `allow_atomic`, `allow_batched` |
+| Distributed counters | ADR-49 | `allow_msg_counter` on the stream |
+| Pull consumer priority groups | ADR-42 | `priority_groups`, `priority_policy` on the consumer |
+| Stream subject transforms | ADR-36 | `subject_transform` on the stream |
+
+KV per-key TTL (ADR-48) is usable today with two conditions. The bucket stream needs `allow_msg_ttl`, which the client's `markerTTL` option turns on when the bucket is created. And `useKV(bucket, opts)` applies `opts` only when it creates the bucket: an existing bucket is opened as it is, and a cached handle ignores later options.
