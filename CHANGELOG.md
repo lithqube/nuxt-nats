@@ -8,6 +8,13 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 ## [Unreleased]
 
+### Added
+
+- **A Claude Code skill** in `skills/nuxt-nats`, covering config and auth, publishing, consumers, dead
+  letters, KV and Object Store, agents and production gotchas. `test/unit/skill.test.ts` checks it
+  against the source. Install with `npx giget@latest gh:lithqube/nuxt-nats/skills/nuxt-nats .claude/skills/nuxt-nats`;
+  see `docs/guides/claude-code.md`.
+
 ### Changed
 
 - **`@nats-io/*` is now `^3.5.0`** (was `^3.4.0`), and `@nats-io/nkeys` `^2.1.0`. 3.5.0 hardens the TLS

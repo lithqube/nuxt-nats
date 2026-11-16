@@ -18,6 +18,7 @@ NATS JetStream integration for Nuxt 4. Server-side publish, typed consumers, KV 
 | [Typed Events](./guides/typed-events.md) | NatsEvents augmentation, end-to-end type safety |
 | [Credential providers](./guides/credentials-rotation.md) | Fetch and rotate credentials at runtime: Infisical, Synadia Control Plane, custom providers |
 | [Synadia Cloud](./guides/synadia-cloud.md) | Connect to Synadia Cloud: endpoints, `.creds`, plan limits, placement, connection budget |
+| [Claude Code](./guides/claude-code.md) | The bundled Claude Code skill: install, what it covers, how it is kept accurate |
 | [Deployment](./guides/deployment.md) | Node, Docker, Kubernetes, Vercel, Cloudflare Workers, Bun |
 
 ### Reference
