@@ -74,6 +74,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:live": "vitest run --config vitest.live.config.ts",
     "test:coverage": "vitest run --coverage",
+    "test:bun": "scripts/bun-smoke.sh",
     "gen:synadia": "openapi-typescript openapi/synadia-control-plane.yaml -o openapi/synadia-control-plane.d.ts",
     "test:all": "npm run test && npm run test:integration",
     "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit",

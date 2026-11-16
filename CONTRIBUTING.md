@@ -94,7 +94,7 @@ npm run gen:synadia
 5. Run `.claude/skills/verify/run.sh` (or at least `npm run lint && npm run test:all && npm run test:types`) locally.
 6. Open the PR. The template will ask which areas you touched and prompt for verification evidence.
 
-CI runs lint, unit (Node 22, 24 and 26), typecheck and integration jobs on every PR. All must be green before merge.
+CI runs lint, unit (Node 22, 24 and 26), coverage, typecheck, integration and a Bun smoke test (`npm run test:bun`) on every PR. All must be green before merge.
 
 ## Architectural decisions
 
