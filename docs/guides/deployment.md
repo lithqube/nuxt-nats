@@ -274,7 +274,7 @@ NUXT_NATS_TRANSPORT=tcp NUXT_NATS_SERVERS=nats://localhost:4222 bun .output/serv
 
 Bun's reliable SIGTERM handling means the graceful drain is more predictable than Node.js in some configurations.
 
-CI builds the playground and runs it under the latest Bun against a NATS server with JetStream and a WebSocket listener, over TCP, WebSocket and `transport: 'auto'`. Each run checks the health endpoint, `jsPublish`, a declarative consumer receiving a message, and a clean drain on `SIGTERM`. Run it yourself with `npm run dev:build && npm run test:bun` (needs Docker). It is a smoke test: the unit and integration suites run on Node only.
+CI builds the playground and runs it under the latest Bun against a NATS server with JetStream and a WebSocket listener, over TCP, WebSocket and `transport: 'auto'`. Each run checks the health endpoint, `jsPublish`, a declarative consumer receiving a message, and that `SIGTERM` logs the drain message and the process exits 0. The shutdown check is shallow: the log line is written before `nc.drain()` and a drain error is caught, so it does not prove the drain itself succeeded. Run it yourself with `npm run dev:build && npm run test:bun` (needs Docker). It is a smoke test: the unit and integration suites run on Node only.
 
 ## TLS
 

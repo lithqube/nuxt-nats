@@ -87,10 +87,16 @@ for await (const item of list) {
 }
 ```
 
-> **Client 3.5 behaviour.** `list()` fails with "list incomplete" and `get()` with "object read
-> incomplete" when chunks are missing, instead of returning partial results or hanging. `get()`
-> and `watch()` fail with `PermissionViolationError` when the connection may not publish the
-> flow-control reply. `ObjectResult.error` resolves to the error rather than rejecting.
+> **Client 3.5 behaviour.**
+>
+> - `list()` reads object **metadata**, not data chunks. It fails with "list incomplete" when the
+>   metadata listing cannot finish; a successful `list()` says nothing about whether an object's
+>   chunks are intact, so do not use it as an integrity check.
+> - `get()` returns the `ObjectResult` before the data has been read. A missing chunk ("object
+>   read incomplete"), a digest mismatch or a flow-control `PermissionViolationError` surfaces
+>   while you read `result.data`: that stream errors, and `result.error` (a promise) resolves to
+>   the error instead of rejecting. Handle errors where you consume the stream or await
+>   `result.error`, not only around `await obs.get()`.
 
 ## Stream large files
 

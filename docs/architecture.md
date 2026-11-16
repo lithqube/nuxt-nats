@@ -219,4 +219,4 @@ They work today by using the underlying client directly (`useJetStream()`, `useN
 | Pull consumer priority groups | ADR-42 | `priority_groups`, `priority_policy` on the consumer |
 | Stream subject transforms | ADR-36 | `subject_transform` on the stream |
 
-KV per-key TTL (ADR-48) already works: `useKV(bucket, opts)` passes `opts` to the client.
+KV per-key TTL (ADR-48) is usable today with two conditions. The bucket stream needs `allow_msg_ttl`, which the client's `markerTTL` option turns on when the bucket is created. And `useKV(bucket, opts)` applies `opts` only when it creates the bucket: an existing bucket is opened as it is, and a cached handle ignores later options.

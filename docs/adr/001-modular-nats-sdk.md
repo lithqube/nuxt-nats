@@ -33,7 +33,7 @@ The legacy `nats` package is not installed, not re-exported, and not referenced 
 
 ## Consequences
 
-- **Minimum Node.js version is 20.** This is enforced in `package.json` `engines` field.
+- **Minimum Node.js version is 22.12** (it was 20 before `@nats-io/*` 3.5, which requires Node 22). This is enforced in `package.json` `engines` field.
 - **Pull-consumer-only API.** `defineNatsConsumer` uses `js.consumers.get().consume()` exclusively. Push consumers (`js.subscribe`) are not exposed — they don't exist in v3.
 - **JSON encode/decode is explicit.** `jsPublish` uses `JSON.stringify` + `TextEncoder`. `handler` in `defineNatsConsumer` calls `JSON.parse(msg.string())`. No codec abstraction layer.
 - **Blog posts and Stack Overflow answers referencing the legacy SDK are incompatible.** Documentation must be explicit about this.

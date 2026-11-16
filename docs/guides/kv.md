@@ -66,6 +66,10 @@ await kv.update('counter', '42', entry!.revision)   // fails if revision changed
 > "incomplete" error instead of returning a partial list when the read cannot finish, and
 > `watch()`, `keys()` and `history()` fail with `PermissionViolationError` when the connection may
 > not publish the flow-control reply, instead of stalling.
+>
+> `keys()` and `history()` are async iterators, so they can yield entries **before** the error is
+> raised. Collect the whole result before acting on it (or be ready to undo partial work); a
+> `for await` loop that applies each entry as it arrives can make partial changes.
 
 ## Watching for changes
 
