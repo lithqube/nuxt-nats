@@ -36,7 +36,7 @@ NATS JetStream integration for Nuxt. Server-side publish, typed consumers, KV an
 ## Requirements
 
 - Nuxt `>= 4.0.0` (tested on 4.6)
-- Node.js `^20.19.0 || >= 22.12.0` (or Bun)
+- Node.js `>=22.12.0` (or Bun)
 - NATS Server `>= 2.10` with JetStream enabled
 
 ## Setup

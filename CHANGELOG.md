@@ -6,6 +6,18 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **`@nats-io/*` is now `^3.5.0`** (was `^3.4.0`), and `@nats-io/nkeys` `^2.1.0`. 3.5.0 hardens the TLS
+  upgrade and cluster discovery, makes ordered consumers and JetStream reads more reliable, and
+  contains errors thrown by user callbacks. See the nats.js v3.5.0 release notes.
+- **Node.js is now `>=22.12.0`** (was `^20.19.0 || >=22.12.0`): `@nats-io/*` 3.5 requires Node 22 or
+  later. CI runs the unit tests on Node 22, 24 and 26, and the other jobs on 26.
+
+---
+
 ## [0.1.0-beta.4] — 2026-10-08
 
 ### Status

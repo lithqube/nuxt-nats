@@ -4,7 +4,7 @@ Thanks for your interest in improving nuxt-nats. This guide covers the local dev
 
 ## Setup
 
-Requires Node.js `^20.19.0 || >=22.12.0` (CI runs 22 and 24) and Docker for the integration tests.
+Requires Node.js `>=22.12.0` (CI runs 22, 24 and 26) and Docker for the integration tests.
 
 ```bash
 git clone https://github.com/lithqube/nuxt-nats.git
@@ -94,7 +94,7 @@ npm run gen:synadia
 5. Run `.claude/skills/verify/run.sh` (or at least `npm run lint && npm run test:all && npm run test:types`) locally.
 6. Open the PR. The template will ask which areas you touched and prompt for verification evidence.
 
-CI runs lint, unit (Node 22 and 24), typecheck and integration jobs on every PR. All must be green before merge.
+CI runs lint, unit (Node 22, 24 and 26), coverage, typecheck, integration and a Bun smoke test (`npm run test:bun`) on every PR. All must be green before merge.
 
 ## Architectural decisions
 

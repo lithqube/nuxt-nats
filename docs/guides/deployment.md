@@ -46,7 +46,7 @@ The Nuxt app and worker process share the same build output but run with differe
 
 Never set credentials in `nuxt.config.ts` for production — values there (even `process.env.X` read there) are baked into the build output, and the module warns on a build. Use runtime environment variables, a mounted creds file, or a [credentials provider](./credentials-rotation.md).
 
-Requires Node.js `^20.19.0 || >= 22.12.0`. For Synadia Cloud specifics (endpoints, plan limits, the per-instance connection budget) see the [Synadia Cloud guide](./synadia-cloud.md).
+Requires Node.js `>=22.12.0`. For Synadia Cloud specifics (endpoints, plan limits, the per-instance connection budget) see the [Synadia Cloud guide](./synadia-cloud.md).
 
 > **Multi-server failover:** `NUXT_NATS_SERVERS` accepts a comma-separated list (e.g. `nats://a:4222,nats://b:4222,nats://c:4222`). The module splits the value into an array before passing it to the NATS client. Alternatively, set `servers` as an array in `nuxt.config.ts`. The client handles failover automatically — if one server is unreachable, it reconnects to the next in the list.
 
