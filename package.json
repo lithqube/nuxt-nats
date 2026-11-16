@@ -55,7 +55,7 @@
     "access": "public"
   },
   "engines": {
-    "node": "^20.19.0 || >=22.12.0"
+    "node": ">=22.12.0"
   },
   "workspaces": [
     "playground"
@@ -84,12 +84,12 @@
     "version:bump-major": "npm version premajor --preid=alpha --no-git-tag-version"
   },
   "dependencies": {
-    "@nats-io/jetstream": "^3.4.0",
-    "@nats-io/kv": "^3.4.0",
-    "@nats-io/nats-core": "^3.4.0",
-    "@nats-io/obj": "^3.4.0",
-    "@nats-io/services": "^3.4.0",
-    "@nats-io/transport-node": "^3.4.0",
+    "@nats-io/jetstream": "^3.5.0",
+    "@nats-io/kv": "^3.5.0",
+    "@nats-io/nats-core": "^3.5.0",
+    "@nats-io/obj": "^3.5.0",
+    "@nats-io/services": "^3.5.0",
+    "@nats-io/transport-node": "^3.5.0",
     "@nuxt/kit": "^4.6.0",
     "@synadia-ai/agent-service": "^0.6.0",
     "@synadia-ai/agents": "^0.6.0",
@@ -97,7 +97,7 @@
   },
   "devDependencies": {
     "@nats-io/jwt": "^0.0.11",
-    "@nats-io/nkeys": "^2.0.3",
+    "@nats-io/nkeys": "^2.1.0",
     "@nuxt/devtools": "^3.2.4",
     "@nuxt/eslint-config": "^1.17.0",
     "@nuxt/module-builder": "^1.0.3",

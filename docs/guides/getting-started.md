@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Nuxt 4 project (4.6 tested)
-- Node.js `^20.19.0 || >= 22.12.0`, or Bun
+- Node.js `>=22.12.0`, or Bun
 - NATS Server >= 2.10 with JetStream enabled, **or** a [Synadia Cloud](https://www.synadia.com/cloud) account (see [Using Synadia Cloud instead](#using-synadia-cloud-instead))
 
 ### Start a local NATS server
