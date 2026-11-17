@@ -1,6 +1,0 @@
-allowBuilds:
-  cpu-features: false
-  esbuild: true
-  protobufjs: false
-  ssh2: false
-  unrs-resolver: false

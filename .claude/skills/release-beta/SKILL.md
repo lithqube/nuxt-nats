@@ -10,10 +10,9 @@ is CONTRIBUTING.md → Releases; this skill adds the checks and the stop points.
 
 ## Hard rules
 
-- **Never run `npm run release:alpha`, `npm run version:bump-alpha`, `npm run release` or
-  `npm run release:stable`** for a beta. `--preid=alpha` turns `0.1.0-beta.N` into
-  `0.1.0-alpha.0`, which sorts below the published betas; `release`/`release:stable` publish to
-  `latest` through changelogen.
+- **Never run `npm run version:bump-alpha`** for a beta (the `release`, `release:alpha` and
+  `release:stable` scripts no longer exist). `--preid=alpha` turns `0.1.0-beta.N` into
+  `0.1.0-alpha.0`, which sorts below the published betas.
 - **Publishing, `npm dist-tag`, pushing tags and pushing branches are outward-facing and
   irreversible.** Show the exact command and wait for the user's explicit yes before each one.
   Approval for one step is not approval for the next.
@@ -66,7 +65,7 @@ It must contain `dist/` (module, `runtime/`, `types.d.mts`, `runtime/cli/bin.js`
 ```bash
 npm whoami                     # must succeed; otherwise the user runs `npm login`
 npm view nuxt-nats dist-tags   # note the current beta/latest
-npm publish --tag beta        # publishConfig.tag is also "beta"
+npm publish --tag beta        # required: package.json sets no default tag and npm refuses a prerelease without one
 ```
 
 ### 4. Move `latest` — STOP for approval

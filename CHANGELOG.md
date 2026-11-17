@@ -6,7 +6,31 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 ---
 
-## [Unreleased]
+## [0.1.0] — 2026-11-17
+
+### Status
+
+The first stable release, on npm `latest`. It is the 0.1.0-beta.4 feature set (Synadia Cloud
+support, runtime credential providers and rotation, declarative consumers, typed subjects, agents)
+on nats.js 3.5, with CI that now also checks coverage, Bun and the packed module. The version is
+still `0.x`: a breaking change ships in a minor version. 1.0 waits on Nitro 3 / Nuxt 5 support, a
+stable agent SDK and a written support policy.
+
+### Upgrading from 0.1.0-beta.4
+
+- **Node.js `>=22.12.0`** (was `^20.19.0 || >=22.12.0`): `@nats-io/*` 3.5 requires Node 22 or later.
+- **`@nats-io/*` is `^3.5.0`.** Read behaviour changed: KV and object-store reads that cannot finish
+  fail with an "incomplete" error instead of returning partial results, and a bucket's default
+  timeout is 5 s rather than a hidden 2 s. See the KV and object-store guides.
+- No module API changed.
+
+### Changed (release process)
+
+- `package-lock.json` is the only lockfile; `pnpm-lock.yaml` and `pnpm-workspace.yaml` are gone.
+- The `release`, `release:alpha` and `release:stable` scripts are removed, and `publishConfig.tag` no
+  longer defaults to `beta`. See CONTRIBUTING.md → Releases.
+- `npm audit fix` cleared the critical and high advisories in dev tooling; the moderate ones left
+  are build and test tooling that is not published. The module's runtime dependencies audit clean.
 
 ### Added
 
@@ -14,14 +38,13 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
   letters, KV and Object Store, agents and production gotchas. `test/unit/skill.test.ts` checks it
   against the source. Install with `npx giget@latest gh:lithqube/nuxt-nats/skills/nuxt-nats .claude/skills/nuxt-nats`;
   see `docs/guides/claude-code.md`.
-
-### Changed
-
-- **`@nats-io/*` is now `^3.5.0`** (was `^3.4.0`), and `@nats-io/nkeys` `^2.1.0`. 3.5.0 hardens the TLS
-  upgrade and cluster discovery, makes ordered consumers and JetStream reads more reliable, and
-  contains errors thrown by user callbacks. See the nats.js v3.5.0 release notes.
-- **Node.js is now `>=22.12.0`** (was `^20.19.0 || >=22.12.0`): `@nats-io/*` 3.5 requires Node 22 or
-  later. CI runs the unit tests on Node 22, 24 and 26, and the other jobs on 26.
+- **CI:** a `coverage` job (enforcing the floors on `credentials/**`, `synadia/**` and `cli/rotate.ts`),
+  a Bun smoke test (`npm run test:bun`) and a packed-tarball consumer check (`npm run test:package`)
+  that installs the packed module into a clean Nuxt 4.6 app and type-checks it. Unit tests run on
+  Node 22, 24 and 26.
+- **Docs:** the README logo is now the module's Nuxt Modules icon (hosted in `nuxt/modules`), and the
+  1.9 MB `docs/assets/nuxt-nats-hero.png` banner is removed from the repo. The 3.5 read behaviour in the KV and object-store guides, the Bun CI test, and the JetStream
+  client features the module does not expose yet (architecture guide).
 
 ---
 
