@@ -42,7 +42,8 @@ stable agent SDK and a written support policy.
   a Bun smoke test (`npm run test:bun`) and a packed-tarball consumer check (`npm run test:package`)
   that installs the packed module into a clean Nuxt 4.6 app and type-checks it. Unit tests run on
   Node 22, 24 and 26.
-- **Docs:** the 3.5 read behaviour in the KV and object-store guides, the Bun CI test, and the JetStream
+- **Docs:** the README logo is now the module's Nuxt Modules icon (hosted in `nuxt/modules`), and the
+  1.9 MB `docs/assets/nuxt-nats-hero.png` banner is removed from the repo. The 3.5 read behaviour in the KV and object-store guides, the Bun CI test, and the JetStream
   client features the module does not expose yet (architecture guide).
 
 ---

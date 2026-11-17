@@ -53,6 +53,12 @@ npm run lint
 # Coverage, with floors on the credentials, Control Plane client and rotator code
 npm run test:coverage
 
+# Bun smoke test: runs the built playground under Bun (needs Docker and `npm run dev:build` first)
+npm run test:bun
+
+# Pack the module, install it into a clean Nuxt 4.6 app and type-check it (AUDIT=1 adds a runtime-deps audit)
+npm run test:package
+
 # Everything above plus both builds, as one pass/fail table
 .claude/skills/verify/run.sh          # add --quick (no builds/Docker) or --live
 ```

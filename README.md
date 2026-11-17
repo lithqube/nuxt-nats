@@ -1,6 +1,8 @@
 # nuxt-nats
 
-![Nuxt NATS cloud messaging banner with JetStream, typed consumers, Synadia Cloud, and credential rotation](docs/assets/nuxt-nats-hero.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/nuxt/modules/main/icons/nuxt-nats.png" alt="nuxt-nats logo" width="160" height="160">
+</p>
 
 [![npm version][npm-version-src]][npm-version-href]
 [![npm downloads][npm-downloads-src]][npm-downloads-href]
@@ -673,8 +675,12 @@ npm run test:types
 npm test
 npm run test:integration
 
-# Build
+# Build, then check the packed module in a clean Nuxt app
 npm run prepack
+npm run test:package
+
+# Bun smoke test (needs Docker and `npm run dev:build` first)
+npm run test:bun
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the pull request workflow and release steps.
