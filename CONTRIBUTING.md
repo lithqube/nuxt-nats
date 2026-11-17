@@ -94,7 +94,7 @@ npm run gen:synadia
 5. Run `.claude/skills/verify/run.sh` (or at least `npm run lint && npm run test:all && npm run test:types`) locally.
 6. Open the PR. The template will ask which areas you touched and prompt for verification evidence.
 
-CI runs lint, unit (Node 22, 24 and 26), coverage, typecheck, integration and a Bun smoke test (`npm run test:bun`) on every PR. All must be green before merge.
+CI runs lint, unit (Node 22, 24 and 26), coverage, typecheck, integration, a Bun smoke test (`npm run test:bun`) and a packed-tarball consumer check (`npm run test:package`) on every PR. All must be green before merge.
 
 ## Architectural decisions
 
@@ -122,7 +122,7 @@ Pre-releases have shipped under the `beta` dist-tag since 0.1.0-beta.1. There is
    npm publish --tag beta
    ```
 
-   `package.json` sets `publishConfig.tag` to `beta`, so a plain `npm publish` also lands on `beta`, never on `latest` by accident. Pass `--tag beta` anyway to be explicit. The `release-beta` project skill (`.claude/skills/release-beta`) walks through these steps with checks.
+   Always pass `--tag beta`: `package.json` no longer sets a default tag, and npm refuses to publish a prerelease version without one. The `release-beta` project skill (`.claude/skills/release-beta`) walks through these steps with checks.
 
 3. Point `latest` at the new version. `latest` has tracked the newest beta since 0.1.0-beta.1, so a plain `npm install nuxt-nats` installs it, but `npm publish --tag beta` does not move it:
 
@@ -139,15 +139,49 @@ Pre-releases have shipped under the `beta` dist-tag since 0.1.0-beta.1. There is
 
 ### Alpha release (retired)
 
-`npm run release:alpha` publishes under the `alpha` tag and dates from the alpha series. Do not run it, or `npm run version:bump-alpha`, on a beta version: `--preid=alpha` turns `0.1.0-beta.N` into `0.1.0-alpha.0`, which sorts *below* the betas already published.
+The alpha series is over: `npm run version:bump-alpha` and `version:bump-minor` / `-major` (preid `alpha`) must not be run on a beta or stable version, because `--preid=alpha` moves `0.1.0-beta.N` back to `0.1.0-alpha.0`.
 
 ### Stable release
 
-Bumps to the next stable version via `changelogen --release` (prompts for semver bump), runs all tests, publishes as the default `latest` tag, and pushes the git tag:
+Stable versions ship under `latest`, by hand from an up-to-date `main`, in the same PR-then-publish
+shape as the betas. There is no `release` script: `changelogen --release` would rewrite the
+hand-written CHANGELOG, so those scripts were removed.
 
-```bash
-npm run release:stable
-```
+1. In a PR, set the version (`npm version 0.1.0 --no-git-tag-version`), move `[Unreleased]` under a
+   dated `## [0.1.0]` heading in CHANGELOG.md, and update the README status line. Merge it.
+2. From `main`, verify and pack:
+
+   ```bash
+   .claude/skills/verify/run.sh        # the full gate
+   AUDIT=1 npm run test:package        # tarball contents, a clean Nuxt consumer, runtime-only npm audit
+   ```
+
+3. Publish (npm prompts for 2FA, see below) and tag:
+
+   ```bash
+   npm publish                          # no publishConfig tag: this lands on `latest`
+   npm dist-tag add nuxt-nats@0.1.0 beta   # optional: keep `beta` from pointing at an older beta
+   git tag -a v0.1.0 -m "v0.1.0" && git push origin v0.1.0
+   ```
+
+4. Create the GitHub release for the tag (not marked pre-release) with the CHANGELOG section as notes,
+   and check that the Nuxt Modules listing no longer shows Beta.
+
+### Package manager and dependency audit
+
+npm is the package manager: `package-lock.json` is the only lockfile, and CI installs with `npm ci`.
+
+Release gate: `AUDIT=1 npm run test:package` runs `npm audit` on the module's runtime dependencies
+alone (what consumers install). It must report no vulnerabilities. A plain `npm audit` over the repo
+also covers the playground and test tooling, so it reports more; those findings are triaged here
+rather than blocking a release:
+
+| Advisory family | Reaches consumers | Decision |
+|---|---|---|
+| `glob`, `minimatch`, `archiver`, `readdir-glob`, `zip-stream` (moderate, DoS / traversal) | No: build and test tooling (`nitropack`, `testcontainers`) | Accept. The only suggested fix downgrades `testcontainers` two majors. Revisit when upstream updates |
+| `nuxt`, `@nuxt/nitro-server`, `nitropack` (moderate) | No: playground and tests | Accept. Flagged only through the `archiver` chain above; already on the latest Nuxt |
+
+Re-run `npm audit` before each release and update this table.
 
 ### Manual version control
 

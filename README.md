@@ -9,7 +9,7 @@
 
 NATS JetStream integration for Nuxt. Server-side publish, typed consumers, KV and Object Store — wired into Nitro's lifecycle with zero boilerplate.
 
-> **Status: Beta** — production-validated since June 2026. Running in multi-replica Docker Swarm deployments with JWT+NKey auth, JetStream publish, ephemeral consumers, and 5+ KV buckets under real traffic. API is stable; breaking changes unlikely before 1.0.
+> **Status: 0.1 stable** — production-validated since June 2026. Running in multi-replica Docker Swarm deployments with JWT+NKey auth, JetStream publish, ephemeral consumers, and 5+ KV buckets under real traffic. This is the first stable release; the version is still `0.x`, so a breaking change ships in a minor version and is called out in the [CHANGELOG](CHANGELOG.md). 1.0 will follow a published support policy.
 
 - [✨ &nbsp;Release Notes](CHANGELOG.md)
 

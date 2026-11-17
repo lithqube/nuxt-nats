@@ -38,6 +38,9 @@ npm run test:coverage
 # Bun over TCP, WebSocket and transport 'auto' (also a CI job; BUN=/path/to/bun to pick a binary)
 npm run test:bun
 
+# Pack the module and type-check it in a clean Nuxt consumer (AUDIT=1 also audits runtime deps; also a CI job)
+npm run test:package
+
 # Full gate as one pass/fail table (--quick: lint/unit/types; --live: + Synadia Cloud)
 .claude/skills/verify/run.sh
 
@@ -60,7 +63,7 @@ npm run version:bump-major    # → 1.0.0-alpha.0
 npm run version:print-tag     # prints v0.1.0
 ```
 
-Pre-releases have been on the `beta` dist-tag since 0.1.0-beta.1. Do not run `version:bump-alpha` or `release:alpha` on a beta version: `--preid=alpha` moves `0.1.0-beta.N` back to `0.1.0-alpha.0`. The beta release steps are in CONTRIBUTING.md → Releases.
+0.1.0 is the first stable release (`latest`); betas shipped on the `beta` tag before it. Do not run `version:bump-alpha` on a beta or stable version: `--preid=alpha` moves `0.1.0-beta.N` back to `0.1.0-alpha.0`. There is no `release` script; the beta and stable steps are in CONTRIBUTING.md → Releases. npm is the only package manager (`package-lock.json`).
 
 ---
 
