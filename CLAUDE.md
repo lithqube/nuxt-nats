@@ -63,7 +63,7 @@ npm run version:bump-major    # → 1.0.0-alpha.0
 npm run version:print-tag     # prints v0.1.0
 ```
 
-0.1.0 is the first stable release (`latest`); betas shipped on the `beta` tag before it. Do not run `version:bump-alpha` on a beta or stable version: `--preid=alpha` moves `0.1.0-beta.N` back to `0.1.0-alpha.0`. There is no `release` script; the beta and stable steps are in CONTRIBUTING.md → Releases. npm is the only package manager (`package-lock.json`).
+0.1.0 is the first release (`latest`); betas shipped on the `beta` tag before it. Do not run `version:bump-alpha` on a beta or stable version: `--preid=alpha` moves `0.1.0-beta.N` back to `0.1.0-alpha.0`. There is no `release` script; the beta and stable steps are in CONTRIBUTING.md → Releases. npm is the only package manager (`package-lock.json`).
 
 ---
 

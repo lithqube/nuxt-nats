@@ -10,7 +10,7 @@ Versions are published to npm — pre-releases under the `beta` dist-tag startin
 
 ### Status
 
-The first stable release, on npm `latest`. It is the 0.1.0-beta.4 feature set (Synadia Cloud
+The first release, on npm `latest`. It is the 0.1.0-beta.4 feature set (Synadia Cloud
 support, runtime credential providers and rotation, declarative consumers, typed subjects, agents)
 on nats.js 3.5, with CI that now also checks coverage, Bun and the packed module. The version is
 still `0.x`: a breaking change ships in a minor version. 1.0 waits on Nitro 3 / Nuxt 5 support, a
